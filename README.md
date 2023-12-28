@@ -30,12 +30,12 @@ pub fn main() !void
     defer _ = gpa.deinit();
     const allocr = gpa.allocator();
 
-    const zon_txt = try std.fs.cwd().readFileAlloc(allocr, "my.zon", std.math.maxInt(usize));
+    // `Ast.parse` requires a sentinel (0) terminated slice, so we pass 0 as the sentinel value (last arg)
+    const zon_txt = try std.fs.cwd().readFileAllocOptions(allocr, "my.zon", std.math.maxInt(usize),
+                                                          null, @alignOf(u8), 0);
     defer allocr.free(zon_txt);
 
-    // `Ast.parse` requires a sentinel (0) terminated slice
-    zon_txt[zon_txt.len - 1] = 0;
-    var ast = try std.zig.Ast.parse(allocr, zon_txt[0..zon_txt.len-1 :0], .zon);
+    var ast = try std.zig.Ast.parse(allocr, zon_txt, .zon);
     defer ast.deinit(allocr);
 
     var fld_name: []const u8 = "database.host";
@@ -49,7 +49,7 @@ pub fn main() !void
 ```
 
 Where `my.zon` is:
-```
+```zon
 .{
     .database =
     .{
@@ -57,6 +57,4 @@ Where `my.zon` is:
         .port = 5432,
     }
 }
-
 ```
-Note that trailing newline is mandatory, since `Ast.parse` wants a zero-terminated source text buffer (a sentinel-terminated u8 slice, sentinel being byte 0), and this example needs an extra byte at the end, after the closing `}` to replace it with byte 0. In fact, any character after the bottom `}` is fine.
