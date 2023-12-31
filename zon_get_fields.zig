@@ -132,9 +132,9 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
         .Pointer => |ptr_info|
         {
             if (ptr_info.size == .Slice and ptr_info.child == u8 and ptr_info.is_const) { return str_val; }
-            else @compileError("getFieldVal: type '" ++ @typeName(T) ++ "' not supported, ");
+            else @compileError("getFieldVal: type '" ++ @typeName(T) ++ "' not supported");
         },
-        else => @compileError("getFieldVal: type '" ++ @typeName(T) ++ "' not supported, ")
+        else => @compileError("getFieldVal: type '" ++ @typeName(T) ++ "' not supported")
     }
 }
 
