@@ -46,9 +46,101 @@ const ZonParserError = error
     BadCharValue          // Field length is not 3, or field does not start or end with a quotation mark
 };
 
+/// Fetches the value of the field specified with dot-separated path from the AST.
+/// T        - type to be returned. Supported types are integers, floats, bool and []const u8
+/// ast      - Abstract Syntax Tree to get the value from. Can be generated using std.zig.Ast.parse
+/// fld_path - Dot-separated path to the field
+pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
+{
+    const str_val = try getFieldValStr(ast, fld_path);
+    switch (@typeInfo(T)) // tagged union: Type = union(enum)
+    {
+        .Int => |int_info|
+        {
+            // Requested type is u8 and field value is in a format that's not going to
+            // make `std.zig.parseCharLiteral()` crash, so let's try calling it
+            if (int_info.bits == 8 and int_info.signedness == .unsigned and
+                str_val[0] == '\'' and str_val[str_val.len - 1] == '\'')
+            {
+                if (str_val.len == 3) { return str_val[1]; } // Unless it's just one byte between ' and '
+                else
+                    if (str_val.len > 3 and str_val.len <= 6 and // str_val.len is not 3, so we must try calling `parseCharLiteral`
+                        (str_val[1] == '\\' or str_val[1] == 0 or
+                         ((str_val.len == 6 and str_val[1] & 0b11111000 == 0b11110000) or
+                          (str_val.len == 5 and str_val[1] & 0b11110000 == 0b11100000) or
+                          (str_val.len == 4 and str_val[1] & 0b11100000 == 0b11000000))))
+                    {
+                        const parsed_char = std.zig.parseCharLiteral(str_val);
+                        switch (parsed_char)
+                        {
+                            .success =>
+                            {
+                                if (parsed_char.success > 255)
+                                {
+                                    std.log.warn("Field '{s}': value {s} successfully parsed as {} but Unicode (u21) is currently not supported, only one byte u8 characters",
+                                                .{ fld_path, str_val, parsed_char.success });
+                                    return ZonParserError.BadCharValue;
+                                }
+                                return @as(T, @intCast(parsed_char.success & 0x0000FF));
+                            },
+                            .failure =>
+                            {
+                                std.log.warn("Field '{s}': value {s} could not be parsed as a character : {}",
+                                            .{ fld_path, str_val, parsed_char.failure });
+                                return ZonParserError.BadCharValue;
+                            }
+                        }
+                        unreachable;
+                    }
+            }
+
+            // Doesn't look like a character, try parsing it as an honest integer.
+            // Autodetect the base, to allow hex, etc. --v
+            const int_val = std.fmt.parseInt(T, str_val, 0) catch |err|
+            {
+                std.log.warn("Could not convert value of field '{s}' = '{s}' to type {s} : {}",
+                             .{ fld_path, str_val, @typeName(T), err });
+                return err;
+            };
+            return int_val;
+        },
+        .Float =>
+        {
+            const float_val = std.fmt.parseFloat(T, str_val) catch |err|
+            {
+                std.log.warn("Could not convert value of field '{s}' = '{s}' to type {s} : {}",
+                             .{ fld_path, str_val, @typeName(T), err });
+                return err;
+            };
+            return float_val;
+        },
+        .Bool =>
+        {
+
+            if (std.mem.eql(u8, str_val, "true")) { return true; }
+            else
+            {
+                if (std.mem.eql(u8, str_val, "false")) { return false; }
+                else
+                {
+                    std.log.warn("Value of field '{s}' = '{s}' is neither 'true' nor 'false'",
+                                .{ fld_path, str_val });
+                    return ZonParserError.BadBooleanValue;
+                }
+            }
+        },
+        .Pointer => |ptr_info|
+        {
+            if (ptr_info.size == .Slice and ptr_info.child == u8 and ptr_info.is_const) { return str_val; }
+            else @compileError("getFieldVal: type '" ++ @typeName(T) ++ "' not supported, ");
+        },
+        else => @compileError("getFieldVal: type '" ++ @typeName(T) ++ "' not supported, ")
+    }
+}
+
 /// Returns field value as a string - a slice of characters within `ast`.
 /// This is the function used by all other `getFieldVal*` functions.
-pub fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
+fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
 {
     var buf: [2]std.zig.Ast.Node.Index = undefined;
     const path_itr = std.mem.splitScalar(u8, fld_path, '.'); // SplitIterator(T, .scalar)
@@ -67,47 +159,6 @@ pub fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
         str_val.len -= 2;
     }
     return str_val;
-}
-
-/// Returns field value as an integer
-pub fn getFieldValInt(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
-{
-    const str_val = try getFieldValStr(ast, fld_path);
-    // Autodetect the base, to allow hex, octa, etc.
-    const int_val = try std.fmt.parseInt(T, str_val, 0);
-    return int_val;
-}
-
-/// Returns field value as a float
-pub fn getFieldValFloat(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
-{
-    const str_val = try getFieldValStr(ast, fld_path);
-    const float_val = try std.fmt.parseFloat(T, str_val);
-    return float_val;
-}
-
-/// Returns field value as a boolean
-pub fn getFieldValBool(ast: std.zig.Ast, fld_path: []const u8) !bool
-{
-    const str_val = try getFieldValStr(ast, fld_path);
-    if (std.mem.eql(u8, str_val, "true")) { return true; }
-    else
-    {
-        if (std.mem.eql(u8, str_val, "false")) { return false; }
-        else return ZonParserError.BadBooleanValue;
-    }
-}
-
-/// Returns cahr field value as u8. Includes additional processing
-/// (checking field format, removing quotaion marks) and does not
-/// invoke `std.fmt.parseInt` unlike `getFieldValInt`.
-pub fn getFieldValChar(ast: std.zig.Ast, fld_path: []const u8) !u8
-{
-    const str_val = try getFieldValStr(ast, fld_path);
-    if (str_val.len == 1) return str_val[0];
-    if (str_val.len != 3 or str_val[0] != '\'' or str_val[2] != '\'')
-        return ZonParserError.BadCharValue;
-    return str_val[1];
 }
 
 /// Meat and potatoes of the whole operation.
@@ -378,7 +429,7 @@ test "Top level struct parsing error test"
     defer ast.deinit(std.testing.allocator);
 
     std.debug.print("\nDisregard the (warn) message below, it's normal:\n", .{});
-    try std.testing.expectError(error.PathElementNotStruct, getFieldValStr(ast, "struct_1.abc"));
+    try std.testing.expectError(error.PathElementNotStruct, getFieldVal([]const u8, ast, "struct_1.abc"));
 }
 
 test "Big test"
@@ -403,22 +454,25 @@ test "Big test"
         \\    .bool_str = "false",
         \\    .bool_bad = "dontknow",
         \\    .character_1 = 'A',
-        \\    .character_no_quotes = B,
+        \\    .character_escaped = '\'',
+        \\    .character_newline = '\x0A', // aka '\n'
+        \\    .character_no_quotes = B, // Bad
+        \\    .character_unicode = '⚡', // TODO: add support for Unicode
         \\    //.character_bad = 'a whole string!', - Makes Ast.parse() fail
         \\    .uint_arr = .{ 10, 20, 30, 40 }, // This is an array
-        \\    .arr_struct =
+        \\    .arr_struct = // An array of structs
         \\    .{
         \\        .{ .abc = 12, .def = 34 },
         \\        .{ .abc = 56, .def = 78 },
         \\        .{ .abc = 90, .def = 12 },
         \\    },
-        \\    .arr_arr =
+        \\    .arr_arr = // Array of arrays
         \\    .{
         \\        .{ -11, -12, -13 },
         \\        .{  21,  22,  23 },
         \\        .{ -31, -32, -33 },
         \\    },
-        \\    .arr_arr_struct =
+        \\    .arr_arr_struct = // Array of arrays of structs
         \\    .{
         \\        .{ .{ .q =  1, .w =  2 }, .{ .q =  3, .w =  4 }, .{ .q =  5, .w =  6 } },
         \\        .{ .{ .q =  7, .w =  8 }, .{ .q =  9, .w = 10 }, .{ .q = 11, .w = 12 } },
@@ -431,91 +485,108 @@ test "Big test"
 
     std.debug.print("\nDisregard the (warn) messages below, they're normal:\n", .{});
 
-    try std.testing.expectError(error.BadSeparatorPosition, getFieldValStr(ast, "struct_1..abc"));
-    try std.testing.expectError(error.BadSeparatorPosition, getFieldValStr(ast, ".struct_1.abc"));
-    try std.testing.expectError(error.BadSeparatorPosition, getFieldValStr(ast, "struct_1.abc."));
-    try std.testing.expectError(error.PathElementNotArray, getFieldValStr(ast, "struct_1[0]"));
-    try std.testing.expectError(error.PathElementNotStruct, getFieldValStr(ast, "arr_arr[0].abc"));
-    try std.testing.expectError(error.BadArrIdxValue, getFieldValInt(u8, ast, "uint_arr[<bad index>]"));
-    try std.testing.expectError(error.BadArrIdxSyntax, getFieldValInt(u8, ast, "uint_arr{2]"));
+    try std.testing.expectError(error.BadSeparatorPosition, getFieldVal([]const u8, ast, "struct_1..abc"));
+    try std.testing.expectError(error.BadSeparatorPosition, getFieldVal([]const u8, ast, ".struct_1.abc"));
+    try std.testing.expectError(error.BadSeparatorPosition, getFieldVal([]const u8, ast, "struct_1.abc."));
+    try std.testing.expectError(error.PathElementNotArray, getFieldVal([]const u8, ast, "struct_1[0]"));
+    try std.testing.expectError(error.PathElementNotStruct, getFieldVal([]const u8, ast, "arr_arr[0].abc"));
+    try std.testing.expectError(error.BadArrIdxValue, getFieldVal(u8, ast, "uint_arr[<bad index>]"));
+    try std.testing.expectError(error.BadArrIdxSyntax, getFieldVal(u8, ast, "uint_arr{2]"));
 
     // Assuming zon_fld_path_len_limit == 20
     try std.testing.expect(zon_fld_path_len_limit <= 20);
     // Otherwise this test makes no sense and must be adjusted accordingly
     try std.testing.expectError(error.PathLimitReached,
-                                getFieldValStr(ast,
-                                               "struct_1.recursion.depth.limit.check.six.seven.eight.nine.ten.l11.l12.l13.l14.l15.l16.l17.l18.l19.l20.l21"));
+                                getFieldVal([]const u8, ast,
+                                            "struct_1.recursion.depth.limit.check.six.seven.eight.nine.ten.l11.l12.l13.l14.l15.l16.l17.l18.l19.l20.l21"));
 
-    var val_str = try getFieldValStr(ast, "ham");
+    var val_str = try getFieldVal([]const u8, ast, "ham");
+    try std.testing.expectEqualStrings(val_str, "0x11");
+    //
+    val_str = try getFieldVal([]const u8, ast, "ham");
     try std.testing.expectEqualStrings(val_str, "0x11");
 
-    var val_u16 = try getFieldValInt(u16, ast, "ham");
+    var val_u16 = try getFieldVal(u16, ast, "ham");
+    try std.testing.expectEqual(val_u16, 17);
+    //
+    val_u16 = try getFieldVal(u16, ast, "ham");
     try std.testing.expectEqual(val_u16, 17);
 
-    val_u16 = try getFieldValInt(u16, ast, "eggs");
+    val_u16 = try getFieldVal(u16, ast, "eggs");
     try std.testing.expectEqual(val_u16, 1991);
     //
-    try std.testing.expectError(error.Overflow, getFieldValInt(u8, ast, "eggs"));
+    val_u16 = try getFieldVal(u16, ast, "eggs");
+    try std.testing.expectEqual(val_u16, 1991);
+    //
+    try std.testing.expectError(error.Overflow, getFieldVal(u8, ast, "eggs"));
 
-    var val_u8 = try getFieldValInt(u8, ast, "bin");
+    var val_u8 = try getFieldVal(u8, ast, "bin");
+    try std.testing.expectEqual(val_u8, 0b10010110);
+    //
+    val_u8 = try getFieldVal(u8, ast, "bin");
     try std.testing.expectEqual(val_u8, 0b10010110);
 
-    const val_i16 = try getFieldValInt(i16, ast, "foo");
+    const val_i16 = try getFieldVal(i16, ast, "foo");
     try std.testing.expectEqual(val_i16, -1000);
-
-    val_str = try getFieldValStr(ast, "foo");
+    //
+    val_str = try getFieldVal([]const u8, ast, "foo");
     try std.testing.expectEqualStrings(val_str, "-1000");
 
-    val_str = try getFieldValStr(ast, "struct_1.def");
+    val_str = try getFieldVal([]const u8, ast, "struct_1.def");
     try std.testing.expectEqualStrings(val_str, "you");
 
-    val_str = try getFieldValStr(ast, "struct_1.str_no_quotes");
+    val_str = try getFieldVal([]const u8, ast, "struct_1.str_no_quotes");
     try std.testing.expectEqualStrings(val_str, "i_am_a_string_too");
 
-    try std.testing.expectError(error.NotFound, getFieldValInt(u8, ast, "struct_1.bad_field"));
+    try std.testing.expectError(error.NotFound, getFieldVal(u8, ast, "struct_1.bad_field"));
 
     // See https://float.exposed , https://www.h-schmidt.net/FloatConverter/IEEE754.html
-    var val_float = try getFieldValFloat(f32, ast, "struct_1.float_cant_represent");
+    var val_float = try getFieldVal(f32, ast, "struct_1.float_cant_represent");
     try std.testing.expectEqual(val_float, 12.45);
 
-    val_float = try getFieldValFloat(f32, ast, "struct_1.float_negative");
+    val_float = try getFieldVal(f32, ast, "struct_1.float_negative");
     try std.testing.expectEqual(val_float, -10.0);
 
-    var val_bool = try getFieldValBool(ast, "bool_1");
+    var val_bool = try getFieldVal(bool, ast, "bool_1");
     try std.testing.expect(!val_bool);
     //
-    val_bool = try getFieldValBool(ast, "bool_2");
+    val_bool = try getFieldVal(bool, ast, "bool_2");
     try std.testing.expect(val_bool);
     //
-    val_bool = try getFieldValBool(ast, "bool_str");
+    val_bool = try getFieldVal(bool, ast, "bool_str");
     try std.testing.expect(!val_bool);
     //
-    try std.testing.expectError(error.BadBooleanValue, getFieldValBool(ast, "bool_bad"));
+    try std.testing.expectError(error.BadBooleanValue, getFieldVal(bool, ast, "bool_bad"));
 
-    val_u8 = try getFieldValChar(ast, "character_1");
+    val_u8 = try getFieldVal(u8, ast, "character_1");
     try std.testing.expectEqual(val_u8, 'A');
     //
-    val_u8 = try getFieldValChar(ast, "character_no_quotes");
-    try std.testing.expectEqual(val_u8, 'B');
+    val_u8 = try getFieldVal(u8, ast, "character_escaped");
+    try std.testing.expectEqual(val_u8, '\'');
     //
-    try std.testing.expectError(error.BadCharValue, getFieldValChar(ast, "struct_1.str_no_quotes"));
+    val_u8 = try getFieldVal(u8, ast, "character_newline");
+    try std.testing.expectEqual(val_u8, '\n');
+    //
+    try std.testing.expectError(error.InvalidCharacter, getFieldVal(u8, ast, "character_no_quotes"));
+    try std.testing.expectError(error.InvalidCharacter, getFieldVal(u8, ast, "struct_1.str_no_quotes"));
+    try std.testing.expectError(error.BadCharValue, getFieldVal(u8, ast, "character_unicode"));
 
-    val_u8 = try getFieldValInt(u8, ast, "uint_arr[3]");
+    val_u8 = try getFieldVal(u8, ast, "uint_arr[3]");
     try std.testing.expectEqual(val_u8, 40);
     //
-    try std.testing.expectError(error.BadArrIdxValue, getFieldValInt(u8, ast, "uint_arr[4]"));
+    try std.testing.expectError(error.BadArrIdxValue, getFieldVal(u8, ast, "uint_arr[4]"));
 
-    val_u8 = try getFieldValInt(u8, ast, "arr_struct[2].abc");
+    val_u8 = try getFieldVal(u8, ast, "arr_struct[2].abc");
     try std.testing.expectEqual(val_u8, 90);
     //
-    try std.testing.expectError(error.NotFound, getFieldValInt(u8, ast, "arr_struct[2].not_there"));
+    try std.testing.expectError(error.NotFound, getFieldVal(u8, ast, "arr_struct[2].not_there"));
 
-    val_str = try getFieldValStr(ast, "arr_arr[2].[2]");
+    val_str = try getFieldVal([]const u8, ast, "arr_arr[2].[2]");
     try std.testing.expectEqualStrings(val_str, "-33");
     //
-    const val_i8 = try getFieldValInt(i8, ast, "arr_arr[2].[2]");
+    const val_i8 = try getFieldVal(i8, ast, "arr_arr[2].[2]");
     try std.testing.expectEqual(val_i8, -33);
 
-    val_u8 = try getFieldValInt(u8, ast, "arr_arr_struct[2].[1].q");
+    val_u8 = try getFieldVal(u8, ast, "arr_arr_struct[2].[1].q");
     try std.testing.expectEqual(val_u8, 15);
 }

@@ -39,12 +39,28 @@ pub fn main() !void
     defer ast.deinit(allocr);
 
     var fld_name: []const u8 = "database.host";
-    const dbhost_str = try zgf.getFieldValStr(ast, fld_name);
-    std.debug.print("Field = {s}, val_str = {s}\n", .{ fld_name, dbhost_str });
+    const dbhost_str = try zgf.getFieldVal([]const u8, ast, fld_name);
+    std.debug.print("Field = {s}      value = {s}\n", .{ fld_name, dbhost_str });
 
     fld_name = "database.port";
-    const dbport_u16 = try zgf.getFieldValInt(u16, ast, fld_name);
-    std.debug.print("Field = {s}, val_u16 = {d}\n", .{ fld_name, dbport_u16 });
+    const dbport_u16 = try zgf.getFieldVal(u16, ast, fld_name);
+    std.debug.print("Field = {s}      value = {d}\n", .{ fld_name, dbport_u16 });
+
+    fld_name = "decimal_separator";
+    const dec_separ_u8 = try zgf.getFieldVal(u8, ast, fld_name);
+    std.debug.print("Field = {s}  value = {c}\n", .{ fld_name, dec_separ_u8 });
+
+    fld_name = "months_in_year";
+    const months_in_year_u8 = try zgf.getFieldVal(u8, ast, fld_name);
+    std.debug.print("Field = {s}     value = {d}\n", .{ fld_name, months_in_year_u8 });
+
+    fld_name = "newline_char";
+    const newline_char_u8 = try zgf.getFieldVal(u8, ast, fld_name);
+    std.debug.print("Field = {s}       value = 0x{X:0>2}\n", .{ fld_name, newline_char_u8 });
+
+    fld_name = "pi";
+    const pi_f64 = try zgf.getFieldVal(f64, ast, fld_name);
+    std.debug.print("Field = {s}                 value = {d}\n", .{ fld_name, pi_f64 });
 }
 ```
 
@@ -55,6 +71,10 @@ Where `my.zon` is:
     .{
         .host = "127.0.0.1",
         .port = 5432,
-    }
+    },
+    .decimal_separator = '.',
+    .months_in_year = 12,
+    .newline_char = '\n',
+    .pi = 3.14159265359,
 }
 ```
