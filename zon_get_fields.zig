@@ -31,7 +31,7 @@ const std = @import("std");
 /// depth limit.
 const zon_fld_path_len_limit = 20;
 
-const ZonParserError = error
+const ZonGetFieldsError = error
 {
     PathLimitReached,     // Field path contains to many elements (separated by dots), see `zon_fld_path_len_limit`
     BadSeparatorPosition, // Zero-length (empty) field path, separator (dot) at the beginning of the field path,
@@ -79,7 +79,7 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
                                 {
                                     std.log.warn("Field '{s}': value {s} successfully parsed as {} but Unicode (u21) is currently not supported, only one byte u8 characters",
                                                 .{ fld_path, str_val, parsed_char.success });
-                                    return ZonParserError.BadCharValue;
+                                    return ZonGetFieldsError.BadCharValue;
                                 }
                                 return @as(T, @intCast(parsed_char.success & 0x0000FF));
                             },
@@ -87,7 +87,7 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
                             {
                                 std.log.warn("Field '{s}': value {s} could not be parsed as a character : {}",
                                             .{ fld_path, str_val, parsed_char.failure });
-                                return ZonParserError.BadCharValue;
+                                return ZonGetFieldsError.BadCharValue;
                             }
                         }
                         unreachable;
@@ -125,7 +125,7 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
                 {
                     std.log.warn("Value of field '{s}' = '{s}' is neither 'true' nor 'false'",
                                 .{ fld_path, str_val });
-                    return ZonParserError.BadBooleanValue;
+                    return ZonGetFieldsError.BadBooleanValue;
                 }
             }
         },
@@ -147,7 +147,7 @@ fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
     const root_init = ast.fullStructInit(&buf, ast.nodes.items(.data)[0].lhs) orelse
     {
         std.log.warn("Zon parsing failed (top level struct)", .{});
-        return ZonParserError.PathElementNotStruct;
+        return ZonGetFieldsError.PathElementNotStruct;
     };
     // Compiler cantt understand path_itr is mutated, so its either
     // const path_itr + @constCast(&path_itr), or var path_itr + _ = &path_itr
@@ -174,7 +174,7 @@ fn walkAst(ast: std.zig.Ast,
 {
     const recursion_depth_2 = recursion_depth + 1;
     if (recursion_depth_2 > zon_fld_path_len_limit) // Limit recursion depth, for the sake of sanity
-        return ZonParserError.PathLimitReached;
+        return ZonGetFieldsError.PathLimitReached;
 
     // `path_element` is the current path element this function is going to handle.
     // There are 4 options:
@@ -189,12 +189,12 @@ fn walkAst(ast: std.zig.Ast,
     var path_element = path_itr.next() orelse
     {
         std.log.warn("Ran out of path elements", .{});
-        return ZonParserError.NotFound;
+        return ZonGetFieldsError.NotFound;
     };
     if (path_element.len == 0)
     {
         std.log.warn("Path starts with dot or zero-length path", .{});
-        return ZonParserError.BadSeparatorPosition;
+        return ZonGetFieldsError.BadSeparatorPosition;
     }
 
     // If this path element is an array element, we must figure out the index (arr_idx)
@@ -208,7 +208,7 @@ fn walkAst(ast: std.zig.Ast,
                                                  path_element[(left_brace_pos+1)..(path_element.len-1)], 0) catch |err|
                 {
                     std.log.warn("Bad array index value in {s}, {}", .{ path_element, err });
-                    return ZonParserError.BadArrIdxValue;
+                    return ZonGetFieldsError.BadArrIdxValue;
                 };
                 path_element.len = left_brace_pos; // Make sure we ignore the array index part from now on
                 break :blk arr_idx;
@@ -216,7 +216,7 @@ fn walkAst(ast: std.zig.Ast,
             else
             {
                 std.log.warn("Bad array index syntax in {s}", .{ path_element });
-                return ZonParserError.BadArrIdxSyntax;
+                return ZonGetFieldsError.BadArrIdxSyntax;
             }
         }
         break :blk null; // Index not found, `path_element` does NOT refer to an element of an array
@@ -232,13 +232,13 @@ fn walkAst(ast: std.zig.Ast,
                 {
                     std.log.warn("Array index out of bounds - unnamed array contains {d} elements, index is {d}",
                                  .{ ast_fields.len, arr_idx_val });
-                    return ZonParserError.BadArrIdxValue;
+                    return ZonGetFieldsError.BadArrIdxValue;
                 }
                 break :blk2 ast_fields[arr_idx_val];
             }
             // path_element.len == 0, but also arr_idx == null - empty path_element
             std.log.warn("Path ends with dot, or two dots in a row", .{});
-            return ZonParserError.BadSeparatorPosition;
+            return ZonGetFieldsError.BadSeparatorPosition;
         }
 
         // path_element.len != 0, must find the field by name
@@ -250,7 +250,7 @@ fn walkAst(ast: std.zig.Ast,
         }
 
         std.log.warn("Path element '{s}' not found", .{ path_element });
-        return ZonParserError.NotFound;
+        return ZonGetFieldsError.NotFound;
     };
 
     // --== Now, figure out what do we do with the field (fld_idx) we have found ==--
@@ -261,7 +261,7 @@ fn walkAst(ast: std.zig.Ast,
         if (nxt.len == 0)
         {
             std.log.warn("Path ends with dot, or two dots in a row", .{});
-            return ZonParserError.BadSeparatorPosition;
+            return ZonGetFieldsError.BadSeparatorPosition;
         }
 
         if (arr_idx) |arr_idx_val| // There's index in this `path_element`, treat it as an array
@@ -278,7 +278,7 @@ fn walkAst(ast: std.zig.Ast,
                     {
                         std.log.warn("Array index out of bounds - anonymous arrys contains {d} elements, index is {d}",
                                      .{ ast_fields.len, arr_idx_val });
-                        return ZonParserError.BadArrIdxValue;
+                        return ZonGetFieldsError.BadArrIdxValue;
                     }
                     break :blk3 ast_fields[arr_idx_val];
                 }
@@ -289,13 +289,13 @@ fn walkAst(ast: std.zig.Ast,
                 const arr_init = ast.fullArrayInit(&buf, fld_idx) orelse // ?full.ArrayInit
                 {
                     std.log.warn("Parsing of field '{s}' failed, or value is not an array", .{ path_element });
-                    return ZonParserError.PathElementNotArray;
+                    return ZonGetFieldsError.PathElementNotArray;
                 };
                 if (arr_idx_val < 0 or arr_idx_val > arr_init.ast.elements.len - 1)
                 {
                     std.log.warn("Array index out of bounds - '{s}' contains {d} elements, index is {d}",
                                  .{ path_element, arr_init.ast.elements.len, arr_idx_val });
-                    return ZonParserError.BadArrIdxValue;
+                    return ZonGetFieldsError.BadArrIdxValue;
                 }
                 break :blk3 arr_init.ast.elements[arr_idx_val];
             };
@@ -334,7 +334,7 @@ fn walkAst(ast: std.zig.Ast,
             const substruct_init = ast.fullStructInit(&buf, fld_idx) orelse
             {
                 std.log.warn("Parsing of field '{s}' failed, or value is not a struct", .{ path_element });
-                return ZonParserError.PathElementNotStruct;
+                return ZonGetFieldsError.PathElementNotStruct;
             };
             return walkAst(ast, substruct_init.ast.fields, path_itr, recursion_depth_2);
         }
@@ -359,7 +359,7 @@ fn walkAst(ast: std.zig.Ast,
                 {
                     std.log.warn("Array index out of bounds - anonymous arrys contains {d} elements, index is {d}",
                                  .{ ast_fields.len, arr_idx_val });
-                    return ZonParserError.BadArrIdxValue;
+                    return ZonGetFieldsError.BadArrIdxValue;
                 }
                 return fulllTokenSlice(ast, ast.nodes.items(.main_token)[ast_fields[arr_idx_val]]);
             }
@@ -370,13 +370,13 @@ fn walkAst(ast: std.zig.Ast,
             const arr_init = ast.fullArrayInit(&buf, fld_idx) orelse // ?full.ArrayInit
             {
                 std.log.warn("Parsing of field '{s}' failed, or value is not an array", .{ path_element });
-                return ZonParserError.PathElementNotArray;
+                return ZonGetFieldsError.PathElementNotArray;
             };
             if (arr_idx_val < 0 or arr_idx_val > arr_init.ast.elements.len - 1)
             {
                 std.log.warn("Array index out of bounds - '{s}' contains {d} elements, index is {d}",
                              .{ path_element, arr_init.ast.elements.len, arr_idx_val });
-                return ZonParserError.BadArrIdxValue;
+                return ZonGetFieldsError.BadArrIdxValue;
             }
 
             const arr_elt_fld_idx = arr_init.ast.elements[arr_idx_val];
