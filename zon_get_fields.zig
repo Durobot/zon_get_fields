@@ -506,8 +506,8 @@ test "Big test"
     var val_u16 = try getFieldVal(u16, ast, "ham");
     try std.testing.expectEqual(val_u16, 17);
 
-    val_str = try getFieldVal(u16, ast, "eggs");
-    try std.testing.expectEqual(val_str, "1991");
+    val_str = try getFieldVal([]const u8, ast, "eggs");
+    try std.testing.expectEqualStrings(val_str, "1991");
     //
     val_u16 = try getFieldVal(u16, ast, "eggs");
     try std.testing.expectEqual(val_u16, 1991);
