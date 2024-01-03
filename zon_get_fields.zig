@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2023 Alexei Kireev
+// Copyright (c) 2023, 2024 Alexei Kireev
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// zon_get_field is available from https://github.com/Durobot/zon_get_fields
+// zon_get_fields is available from https://github.com/Durobot/zon_get_fields
 
 const std = @import("std");
 
@@ -503,17 +503,11 @@ test "Big test"
     var val_str = try getFieldVal([]const u8, ast, "ham");
     try std.testing.expectEqualStrings(val_str, "0x11");
     //
-    val_str = try getFieldVal([]const u8, ast, "ham");
-    try std.testing.expectEqualStrings(val_str, "0x11");
-
     var val_u16 = try getFieldVal(u16, ast, "ham");
     try std.testing.expectEqual(val_u16, 17);
-    //
-    val_u16 = try getFieldVal(u16, ast, "ham");
-    try std.testing.expectEqual(val_u16, 17);
 
-    val_u16 = try getFieldVal(u16, ast, "eggs");
-    try std.testing.expectEqual(val_u16, 1991);
+    val_str = try getFieldVal(u16, ast, "eggs");
+    try std.testing.expectEqual(val_str, "1991");
     //
     val_u16 = try getFieldVal(u16, ast, "eggs");
     try std.testing.expectEqual(val_u16, 1991);
@@ -521,9 +515,6 @@ test "Big test"
     try std.testing.expectError(error.Overflow, getFieldVal(u8, ast, "eggs"));
 
     var val_u8 = try getFieldVal(u8, ast, "bin");
-    try std.testing.expectEqual(val_u8, 0b10010110);
-    //
-    val_u8 = try getFieldVal(u8, ast, "bin");
     try std.testing.expectEqual(val_u8, 0b10010110);
 
     const val_i16 = try getFieldVal(i16, ast, "foo");
