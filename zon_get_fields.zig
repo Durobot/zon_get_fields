@@ -361,7 +361,7 @@ fn walkAst(ast: std.zig.Ast,
                                  .{ ast_fields.len, arr_idx_val });
                     return ZonGetFieldsError.BadArrIdxValue;
                 }
-                return fulllTokenSlice(ast, ast.nodes.items(.main_token)[ast_fields[arr_idx_val]]);
+                return getValueSlice(ast, ast.nodes.items(.main_token)[ast_fields[arr_idx_val]]);
             }
 
             // If we got here, remaining part of this `path_element` is NOT empty,
@@ -380,20 +380,20 @@ fn walkAst(ast: std.zig.Ast,
             }
 
             const arr_elt_fld_idx = arr_init.ast.elements[arr_idx_val];
-            return fulllTokenSlice(ast, ast.nodes.items(.main_token)[arr_elt_fld_idx]);
+            return getValueSlice(ast, ast.nodes.items(.main_token)[arr_elt_fld_idx]);
         }
         // -------------------------------------------------------------------------------
         // 1. `path_element` is the last element of the path, and refers to a scalar field
         // -------------------------------------------------------------------------------
         // `arr_idx` is null, return the field value as a scalar
-        return fulllTokenSlice(ast, ast.nodes.items(.main_token)[fld_idx]);
+        return getValueSlice(ast, ast.nodes.items(.main_token)[fld_idx]);
     }
     // We MUST have returned either a value, or an error by this point
     unreachable;
 }
 
 /// Wrapper around `std.zig.Ast.tokenSlice()`, to get negative numbers properly
-fn fulllTokenSlice(ast: std.zig.Ast, token_index: std.zig.Ast.TokenIndex) []const u8
+fn getValueSlice(ast: std.zig.Ast, token_index: std.zig.Ast.TokenIndex) []const u8
 {
     const ts = ast.tokenSlice(token_index);
     // Somehow for negative numbers (without quotation marks)
