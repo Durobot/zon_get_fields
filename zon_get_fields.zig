@@ -151,7 +151,7 @@ fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
     };
     // Compiler cantt understand path_itr is mutated, so its either
     // const path_itr + @constCast(&path_itr), or var path_itr + _ = &path_itr
-    var str_val = try walkAst(ast, root_init.ast.fields, @constCast(&path_itr), 0);
+    var str_val = try walkAst(ast, root_init.ast.fields, @constCast(&path_itr), 1);
     // Remove quotation marks if found
     if (str_val[0] == '"' and str_val[str_val.len - 1] == '"')
     {
@@ -172,9 +172,11 @@ fn walkAst(ast: std.zig.Ast,
            path_itr: *std.mem.SplitIterator(u8, .scalar),
            recursion_depth: u32) ![]const u8
 {
-    const recursion_depth_2 = recursion_depth + 1;
-    if (recursion_depth_2 > zon_fld_path_len_limit) // Limit recursion depth, for the sake of sanity
+    if (recursion_depth > zon_fld_path_len_limit)// Limit recursion depth, for the sake of sanity
+    {
+        std.log.warn("fn walkAst: recursion limit ({}) exceeded", .{ zon_fld_path_len_limit });
         return ZonGetFieldsError.PathLimitReached;
+    }
 
     // `path_element` is the current path element this function is going to handle.
     // There are 4 options:
@@ -311,7 +313,7 @@ fn walkAst(ast: std.zig.Ast,
                                 .{ path_element, arr_idx_val });
                     return error.PathElementNotArray;
                 };
-                return walkAst(ast, arr_elt_arr_init.ast.elements, path_itr, recursion_depth_2);
+                return walkAst(ast, arr_elt_arr_init.ast.elements, path_itr, recursion_depth + 1);
             }
             else // Array element is a struct
             {
@@ -322,7 +324,7 @@ fn walkAst(ast: std.zig.Ast,
                                 .{ arr_idx_val, path_element });
                     return error.PathElementNotStruct;
                 };
-                return walkAst(ast, arr_elt_struct_init.ast.fields, path_itr, recursion_depth_2);
+                return walkAst(ast, arr_elt_struct_init.ast.fields, path_itr, recursion_depth + 1);
             }
         }
         else // No index in this `path_element`, treat it as a struct
@@ -336,7 +338,7 @@ fn walkAst(ast: std.zig.Ast,
                 std.log.warn("Parsing of field '{s}' failed, or value is not a struct", .{ path_element });
                 return ZonGetFieldsError.PathElementNotStruct;
             };
-            return walkAst(ast, substruct_init.ast.fields, path_itr, recursion_depth_2);
+            return walkAst(ast, substruct_init.ast.fields, path_itr, recursion_depth + 1);
         }
     }
     else // --== No more path elements after this one, we have arrived, return the value ==--
