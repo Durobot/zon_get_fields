@@ -139,7 +139,7 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
 }
 
 /// Returns field value as a string - a slice of characters within `ast`.
-/// This is the function used by all other `getFieldVal*` functions.
+/// This is the base function used `getFieldVal` before it converts the value to the type it needs.
 fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
 {
     var buf: [2]std.zig.Ast.Node.Index = undefined;
