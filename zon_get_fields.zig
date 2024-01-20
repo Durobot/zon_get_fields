@@ -143,15 +143,13 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
 fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
 {
     var buf: [2]std.zig.Ast.Node.Index = undefined;
-    const path_itr = std.mem.splitScalar(u8, fld_path, '.'); // SplitIterator(T, .scalar)
+    var path_itr = std.mem.splitScalar(u8, fld_path, '.'); // SplitIterator(T, .scalar)
     const root_init = ast.fullStructInit(&buf, ast.nodes.items(.data)[0].lhs) orelse
     {
         std.log.warn("Zon parsing failed (top level struct)", .{});
         return ZonGetFieldsError.PathElementNotStruct;
     };
-    // Compiler cantt understand path_itr is mutated, so its either
-    // const path_itr + @constCast(&path_itr), or var path_itr + _ = &path_itr
-    var str_val = try walkAst(ast, root_init.ast.fields, @constCast(&path_itr), 1);
+    var str_val = try walkAst(ast, root_init.ast.fields, &path_itr, 1);
     // Remove quotation marks if found
     if (str_val[0] == '"' and str_val[str_val.len - 1] == '"')
     {
