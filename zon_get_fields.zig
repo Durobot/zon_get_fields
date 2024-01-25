@@ -74,6 +74,7 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
             {
                 if (str_val.len == 3) { return str_val[1]; } // Unless it's just one byte between ' and '
                 else
+                {
                     if (str_val.len > 3 and str_val.len <= 6 and // str_val.len is not 3, so we must try calling `parseCharLiteral`
                         (str_val[1] == '\\' or str_val[1] == 0 or
                          ((str_val.len == 6 and str_val[1] & 0b11111000 == 0b11110000) or
@@ -100,9 +101,8 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
                                 return ZonGetFieldsError.BadCharValue;
                             }
                         }
-                        // We MUST have returned either a value, or an error by this point
-                        @panic("Bottom of .Int branch in `fn getFieldVal` reached!");
                     }
+                }
             }
 
             // Doesn't look like a character, try parsing it as an honest integer.
@@ -146,6 +146,8 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
         },
         else => @compileError("fn getFieldVal: type '" ++ @typeName(T) ++ "' not supported")
     }
+    // We MUST have returned either a value, or an error by this point
+    @panic("Bottom of `fn getFieldVal` reached!");
 }
 
 /// Returns field value as a string - a slice of characters within `ast`.
