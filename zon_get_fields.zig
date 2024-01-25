@@ -126,7 +126,6 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
         },
         .Bool =>
         {
-
             if (std.mem.eql(u8, str_val, "true")) { return true; }
             else
             {
@@ -399,7 +398,7 @@ fn walkAst(ast: std.zig.Ast,
         return getValueSlice(ast, ast.nodes.items(.main_token)[fld_idx]);
     }
     // We MUST have returned either a value, or an error by this point
-    @panic("Botton of `fn walkAst` reached!");
+    @panic("Bottom of `fn walkAst` reached!");
 }
 
 /// Wrapper around `std.zig.Ast.tokenSlice()`, to get negative numbers properly
