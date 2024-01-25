@@ -100,7 +100,8 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
                                 return ZonGetFieldsError.BadCharValue;
                             }
                         }
-                        unreachable;
+                        // We MUST have returned either a value, or an error by this point
+                        @panic("Bottom of .Int branch in `fn getFieldVal` reached!");
                     }
             }
 
