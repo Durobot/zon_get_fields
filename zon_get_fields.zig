@@ -146,8 +146,6 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
         },
         else => @compileError("fn getFieldVal: type '" ++ @typeName(T) ++ "' not supported")
     }
-    // We MUST have returned either a value, or an error by this point
-    @panic("Bottom of `fn getFieldVal` reached!");
 }
 
 /// Returns field value as a string - a slice of characters within `ast`.
@@ -400,8 +398,6 @@ fn walkAst(ast: std.zig.Ast,
         // `arr_idx` is null, return the field value as a scalar
         return getValueSlice(ast, ast.nodes.items(.main_token)[fld_idx]);
     }
-    // We MUST have returned either a value, or an error by this point
-    @panic("Bottom of `fn walkAst` reached!");
 }
 
 /// Wrapper around `std.zig.Ast.tokenSlice()`, to get negative numbers properly
