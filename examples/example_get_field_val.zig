@@ -38,4 +38,12 @@ pub fn main() !void
     fld_name = "pi";
     const pi_f64 = try zgf.getFieldVal(f64, ast, fld_name);
     std.debug.print("Field = {s}                 value = {d}\n", .{ fld_name, pi_f64 });
+
+    fld_name = "hello";
+    const hello_unicode_str = try zgf.getFieldVal([]const u8, ast, fld_name);
+    std.debug.print("Field = {s}              value = {s}\n", .{ fld_name, hello_unicode_str });
+
+    fld_name = "unicode_char";
+    const unicode_char_u21 = try zgf.getFieldVal(u21, ast, fld_name);
+    std.debug.print("Field = {s}       value = {u}\n", .{ fld_name, unicode_char_u21 });
 }

@@ -1,0 +1,13 @@
+.{
+    .database =
+    .{
+        .host = "127.0.0.1",
+        .port = 5432,
+    },
+    .decimal_separator = '.',
+    .months_in_year = 12,
+    .newline_char = '\n',
+    .pi = 3.14159265359,
+    .hello = "こんにちは",
+    .unicode_char = '⚡'
+}

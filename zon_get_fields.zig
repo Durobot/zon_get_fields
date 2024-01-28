@@ -57,7 +57,7 @@ const ZonGetFieldsError = error
 // ---------------------------------------------------------
 
 /// Fetches the value of the field specified with dot-separated path from the AST.
-/// T        - type to be returned. Supported types are integers, floats, bool and []const u8
+/// T        - The type to be returned. Supported types are integers, floats, bool and []const u8
 /// ast      - Abstract Syntax Tree to get the value from. Can be generated using std.zig.Ast.parse
 /// fld_path - Dot-separated path to the field
 pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
@@ -67,9 +67,9 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
     {
         .Int => |int_info|
         {
-            // Requested type is u8 and field value is in a format that's not going to
+            // Requested type is u8 or u21 and field value is in a format that's not going to
             // make `std.zig.parseCharLiteral()` crash, so let's try calling it
-            if (int_info.bits == 8 and int_info.signedness == .unsigned and
+            if ((int_info.bits == 8 or int_info.bits == 21) and int_info.signedness == .unsigned and
                 str_val[0] == '\'' and str_val[str_val.len - 1] == '\'')
             {
                 if (str_val.len == 3) { return str_val[1]; } // Unless it's just one byte between ' and '
@@ -86,13 +86,14 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
                         {
                             .success =>
                             {
-                                if (parsed_char.success > 255)
+                                if (int_info.bits == 8 and parsed_char.success > 255)
                                 {
-                                    std.log.warn("Field '{s}': value {s} successfully parsed as {} but Unicode (u21) is currently not supported, only one byte u8 characters",
+                                    std.log.warn("Field '{s}': value {s} (0x{x}) can't fit the requested type u8",
                                                 .{ fld_path, str_val, parsed_char.success });
                                     return ZonGetFieldsError.BadCharValue;
                                 }
-                                return @as(T, @intCast(parsed_char.success & 0x0000FF));
+                                return if (int_info.bits == 8) @as(T, @intCast(parsed_char.success & 0x0000FF))
+                                       else @as(T, @intCast(parsed_char.success)); // int_info.bits == 21
                             },
                             .failure =>
                             {
@@ -469,8 +470,9 @@ test "getFieldVal big test"
         \\    .character_escaped = '\'',
         \\    .character_newline = '\x0A', // aka '\n'
         \\    .character_no_quotes = B, // Bad
-        \\    .character_unicode = '⚡', // TODO: add support for Unicode
+        \\    .character_unicode = '⚡',
         \\    //.character_bad = 'a whole string!', - Makes Ast.parse() fail
+        \\    .str_unicode = "こんにちは",
         \\    .arr_u8 = .{ 10, 20, 30, 40 }, // This is an array
         \\    .arr_struct = // An array of structs
         \\    .{
@@ -574,6 +576,12 @@ test "getFieldVal big test"
     try std.testing.expectError(error.InvalidCharacter, getFieldVal(u8, ast, "character_no_quotes"));
     try std.testing.expectError(error.InvalidCharacter, getFieldVal(u8, ast, "struct_1.str_no_quotes"));
     try std.testing.expectError(error.BadCharValue, getFieldVal(u8, ast, "character_unicode"));
+
+    const val_u21 = try getFieldVal(u21, ast, "character_unicode");
+    try std.testing.expectEqual(val_u21, '⚡');
+
+    val_str = try getFieldVal([]const u8, ast, "str_unicode");
+    try std.testing.expectEqualStrings(val_str, "こんにちは");
 
     val_u8 = try getFieldVal(u8, ast, "arr_u8[3]");
     try std.testing.expectEqual(val_u8, 40);
@@ -966,12 +974,12 @@ fn getValueInt(comptime T: type, ast: std.zig.Ast, idx: std.zig.Ast.Node.Index) 
         str_val.ptr += 1;
         str_val.len -= 2;
     }
-    // u8 is an integer type that is used to reresent characters, so we must first try
+    // u8 and u21 are the integer types used to reresent characters, so we must first try
     // to find out if the value of the field in ZON is meant to be a character.
     // If target field type is u8, check that AST slice (ZON field value as a string)
     // is in a format that's not going to make `std.zig.parseCharLiteral()` crash.
     // If yes, try calling it.
-    if (T == u8 and str_val[0] == '\'' and str_val[str_val.len - 1] == '\'')
+    if ((T == u8 or T == u21) and str_val[0] == '\'' and str_val[str_val.len - 1] == '\'')
     {
         if (str_val.len == 3) { return str_val[1]; } // Just one byte between ' and '
         else
@@ -986,14 +994,14 @@ fn getValueInt(comptime T: type, ast: std.zig.Ast, idx: std.zig.Ast.Node.Index) 
                 {
                     .success =>
                     {
-                        if (parsed_char.success > 255)
+                        if (T == u8 and parsed_char.success > 255)
                         {
-                            std.log.warn("Field '{s}': value {s} successfully parsed as {} but Unicode (u21)" ++
-                                         " is currently not supported, only one byte u8 characters",
+                            std.log.warn("Field '{s}': value {s} (0x{x}) can't fit the requested type u8",
                                         .{ ast.tokenSlice(ast.firstToken(idx) - 2), str_val, parsed_char.success });
                             return ZonGetFieldsError.BadCharValue;
                         }
-                        return @as(T, @intCast(parsed_char.success & 0x0000FF));
+                        return if (T == u8) @as(T, @intCast(parsed_char.success & 0x0000FF))
+                               else @as(T, @intCast(parsed_char.success)); // T == u21
                     },
                     .failure => // we only get here when str_val[1] == 0, but I'm not sure how to achieve this
                     {
@@ -1095,6 +1103,8 @@ test "zonToStruct big test"
         \\    .character_1 = 'A',
         \\    .character_escaped = '\'',
         \\    .character_newline = '\x0A', // aka '\n'
+        \\    .character_unicode = '⚡',
+        \\    .str_unicode = "こんにちは",
         \\    .float_f32 = 12.45,
         \\    .boolean = true,
         \\    .arr_bool = .{ true, false, true, false },
@@ -1138,6 +1148,8 @@ test "zonToStruct big test"
         character_1: u8 = 0,
         character_escaped: u8 = 0,
         character_newline: u8 = 0,
+        character_unicode: u21 = 0,
+        str_unicode: []const u8 = &.{},
         str_u16: u16 = 0,
         negative_i16: i16 = 0,
         float_f32: f32 = 0.0,
@@ -1164,6 +1176,8 @@ test "zonToStruct big test"
     try std.testing.expectEqual(tgt_struct.character_1, 'A');
     try std.testing.expectEqual(tgt_struct.character_escaped, '\'');
     try std.testing.expectEqual(tgt_struct.character_newline, '\x0A');
+    try std.testing.expectEqual(tgt_struct.character_unicode, '⚡');
+    try std.testing.expectEqualStrings(tgt_struct.str_unicode, "こんにちは");
     try std.testing.expectEqual(tgt_struct.boolean, true);
     var val_u16: u16 = 2;
     for (tgt_struct.arr_u16) |e|
@@ -1205,7 +1219,7 @@ test "zonToStruct big test"
     );
 
     try std.testing.expectEqualStrings(tgt_struct.nested_1.s_slice_of_u8, "String will be cloned");
-    // Since `tgt_struct.nested_1.s_slice_of_u8` is []u8, it must be pointing at the clones value string
+    // Since `tgt_struct.nested_1.s_slice_of_u8` is []u8, it must be pointing at the cloned value string
     // ouside of `ast.source`
     try std.testing.expect
     (

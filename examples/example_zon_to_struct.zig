@@ -15,7 +15,7 @@ pub fn main() !void
     var ast = try std.zig.Ast.parse(allocr, zon_txt, .zon);
     defer ast.deinit(allocr);
 
-    const MyStruct = struct
+    const MyStruct = struct // Field order is not important
     {
         const DatabaseSettings = struct
         {
@@ -32,7 +32,9 @@ pub fn main() !void
         decimal_separator: u8 = 0,
         months_in_year: u8 = 0,
         newline_char: u8 = 0,
-        pi: f64 = 0.0
+        pi: f64 = 0.0,
+        hello: []const u8 = &.{}, // Same as hello: []const u8 = undefined; hello.len = 0;
+        unicode_char: u21 = 0
     };
     var ms = MyStruct {};
     try zgf.zonToStruct(&ms, ast, null); // We MUST provide `allocr` if `host` is []u8
@@ -44,4 +46,6 @@ pub fn main() !void
     std.debug.print("Field = months_in_year     value = {d}\n", .{ ms.months_in_year });
     std.debug.print("Field = newline_char       value = 0x{X:0>2}\n", .{ ms.newline_char });
     std.debug.print("Field = pi                 value = {d}\n", .{ ms.pi });
+    std.debug.print("Field = hello              value = {s}\n", .{ ms.hello });
+    std.debug.print("Field = unicode_char       value = {u}\n", .{ ms.unicode_char });
 }
