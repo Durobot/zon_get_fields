@@ -3,11 +3,15 @@
     .{
         .host = "127.0.0.1",
         .port = 5432,
+        .user = "superadmin",
+        .password = "supersecret",
     },
     .decimal_separator = '.',
     .months_in_year = 12,
     .newline_char = '\n',
     .pi = 3.14159265359,
     .hello = "こんにちは",
-    .unicode_char = '⚡'
+    .unicode_char = '⚡',
+    .primes = .{ 2, 3, 5, 7, 11 },
+    .factorials = .{ 1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800 },
 }

@@ -23,6 +23,14 @@ pub fn main() !void
     const dbport_u16 = try zgf.getFieldVal(u16, ast, fld_name);
     std.debug.print("Field = {s}      value = {d}\n", .{ fld_name, dbport_u16 });
 
+    fld_name = "database.user";
+    const dbhost_user = try zgf.getFieldVal([]const u8, ast, fld_name);
+    std.debug.print("Field = {s}      value = {s}\n", .{ fld_name, dbhost_user });
+
+    fld_name = "database.password";
+    const dbhost_password = try zgf.getFieldVal([]const u8, ast, fld_name);
+    std.debug.print("Field = {s}  value = {s}\n", .{ fld_name, dbhost_password });
+
     fld_name = "decimal_separator";
     const dec_separ_u8 = try zgf.getFieldVal(u8, ast, fld_name);
     std.debug.print("Field = {s}  value = {c}\n", .{ fld_name, dec_separ_u8 });
@@ -46,4 +54,23 @@ pub fn main() !void
     fld_name = "unicode_char";
     const unicode_char_u21 = try zgf.getFieldVal(u21, ast, fld_name);
     std.debug.print("Field = {s}       value = {u}\n", .{ fld_name, unicode_char_u21 });
+
+    std.debug.print("Field = primes             value = [ ", .{});
+    var buf = [_]u8 { 0 } ** 14;
+    for (0..5) |i|
+    {
+        const buf_slice = try std.fmt.bufPrint(&buf, "primes[{d}]", .{i});
+        const int_u8 = try zgf.getFieldVal(u8, ast, buf_slice);
+        std.debug.print("{d}, ", .{ int_u8 });
+    }
+    std.debug.print("]\n", .{});
+
+    std.debug.print("Field = factorials         value = [ ", .{});
+    for (0..12) |i|
+    {
+        const buf_slice = try std.fmt.bufPrint(&buf, "factorials[{d}]", .{i});
+        const int_u32 = try zgf.getFieldVal(u32, ast, buf_slice);
+        std.debug.print("{d}, ", .{ int_u32 });
+    }
+    std.debug.print("]\n", .{});
 }
