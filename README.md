@@ -8,7 +8,30 @@ Developed and tested with Zig 0.12.0-dev (nightly), more specifically **0.12.0-d
 
 Probably won't work with Zig 0.11, but you're welcome to try it and report back, although I'm not too keen on backporting.
 
-**zon_get_fields** is licensed under the [the MIT License](https://en.wikipedia.org/w/index.php?title=MIT_License&useskin=vector). You are more than welcome to drop `zon_get_fields.zig` into your project,
+**zon_get_fields** is licensed under the [the MIT License](https://en.wikipedia.org/w/index.php?title=MIT_License&useskin=vector). You are more than welcome to drop `zon_get_fields.zig` into your project, or you can use the Zig package manager:
+
+1. In your project's `build.zig.zon`, in `.dependencies`, add
+
+   ```zig
+   .zon_get_fields =
+   .{
+       .url = "https://github.com/Durobot/zon_get_fields/archive/<GIT COMMIT HASH, 40 HEX DIGITS>.tar.gz",
+       .hash = "<ZIG PACKAGE HASH, 68 HEX DIGITS>" // Use arbitrary hash, get correct hash from the error 
+   }
+   ```
+
+2. In your project's `build.zig`, in `pub fn build`, before `b.installArtifact(exe);`, add
+
+   ```zig
+   const zsp = b.dependency("zon_get_fields",
+   .{
+       .target = target,
+       .optimize = optimize,
+   });
+   exe.root_module.addImport("zon_get_fields", zsp.module("zon_get_fields"));
+   ```
+
+3. Build your project with `zig build`, as you normally do.
 
 Things I like:
 
