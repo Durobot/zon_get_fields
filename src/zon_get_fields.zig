@@ -709,7 +709,7 @@ fn MakeReportStructType(tgt_type: type) type
     return @Type(.{
                     .Struct =
                     .{
-                        .layout = .Auto,
+                        .layout = .auto,
                         .backing_integer = null,
                         .fields = &flds,
                         .decls = &.{},
