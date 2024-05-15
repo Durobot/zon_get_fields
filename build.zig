@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void
 
     _ = b.addModule("zon_get_fields", // package_name
     .{
-        .root_source_file = .{ .path = "src/zon_get_fields.zig" },
+        .root_source_file = b.path("src/zon_get_fields.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void
         .name = "zon_get_fields",
         // In this case the main source file is merely a path, however, in more
         // complicated build scripts, this could be a generated file.
-        .root_source_file = .{ .path = "src/zon_get_fields.zig" },
+        .root_source_file = b.path("src/zon_get_fields.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) void
     // but does not run it.
     const lib_unit_tests = b.addTest(
     .{
-        .root_source_file = .{ .path = "src/zon_get_fields.zig" },
+        .root_source_file = b.path("src/zon_get_fields.zig"),
         .target = target,
         .optimize = optimize,
     });

@@ -4,7 +4,7 @@ Several functions to facilitate the process of walking Abstract Syntax Trees (AS
 
 But first you have to call `std.zig.Ast.parse` to tokenize and parse your ZON, creating the AST.
 
-Developed and tested with Zig 0.12.0-dev (nightly), more specifically **0.12.0-dev.2823+955fd65cb**.
+Tested with Zig **0.12.0** and **0.13.0-dev.211+6a65561e3**.
 
 Probably won't work with Zig 0.11, but you're welcome to try it and report back, although I'm not too keen on backporting.
 
@@ -31,7 +31,7 @@ Probably won't work with Zig 0.11, but you're welcome to try it and report back,
    exe.root_module.addImport("zon_get_fields", zgf.module("zon_get_fields"));
    ```
 
-3. Add `const eppm = @import("zon_get_fields");`in your source file(s).
+3. Add `const zgf = @import("zon_get_fields");`in your source file(s).
 
 3. Build your project with `zig build`, as you normally do.
 
