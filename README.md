@@ -37,7 +37,7 @@ Probably won't work with Zig 0.11, but you're welcome to try it and report back,
 
 Things I like:
 
-1. Hey, it works! At looks it looks like it does, and since nothing like this exists in the standard library, I consider it a success;
+1. Hey, it works! At least it looks like it does, and since nothing like this exists in the standard library, I consider it a success;
 2. You can throw your struct and an AST at a function (`pub fn zonToStruct`), and have your struct filled with data. The fields that have matching values in the provided AST, that is, and you get to know what was filled and what was not - look and the returned struct;
 3. Or you can fetch the values of the fields you need using string paths to indicate them, calling `pub fn getFieldVal`. It's fine if all you need is a couple of fields;
 3. All the basics are covered - signed and unsigned integers and floats, strings, single characters, booleans, nested structs, arrays, arrays of arrays, arrays of structs (in fact, any combination of structs and arrays should work).
