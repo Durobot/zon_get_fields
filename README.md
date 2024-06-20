@@ -50,8 +50,8 @@ Things I don't really like:
 
 For examples of how to use them, turn to the test sections in `zon_parse.zig`:
 
-1. Find `zonToStruct Tests` comment (line 1333) for `pub fn zonToStruct` approach - filling your struct all at once;
-2. Find `getFieldVal Tests` comment (line 425) for `pub fn getFieldVal`approach - fetching field values one by one, as you provide string paths to each field.
+1. Find `zonToStruct Tests` [comment](https://github.com/Durobot/zon_get_fields/blob/fcf26e7fa125fce56e411a293b285f746417bd15/src/zon_get_fields.zig#L1489) for `pub fn zonToStruct` approach - filling your struct all at once;
+2. Find `getFieldVal Tests` [comment](https://github.com/Durobot/zon_get_fields/blob/fcf26e7fa125fce56e411a293b285f746417bd15/src/zon_get_fields.zig#L427) for `pub fn getFieldVal`approach - fetching field values one by one, as you provide string paths to each field.
 
 Or check out the short examples below.
 
@@ -321,5 +321,3 @@ pub fn main() !void
 | Slice of arrays                          | Slice of arrays. Report array element type depends on the target array element type.<br />**Note**: (1) allocator must be provided (not null), since report slice has to be allocated; (2) caller owns the report struct and must deallocate this report slice. |
 | Slice of structs                         | Slice of structs. Report struct field types depend on the target struct field types.<br />**Note**: (1) allocator must be provided (not null), since report slice has to be allocated; (2) caller owns the report struct and must deallocate this report slice. |
 | Slice of slices                          | If target nested slices contain primitive type elements (integers, floats, etc.), then the report will contain a slice of ZonFieldResult enum elements.<br />If target nested slices contain structs, arrays or slices, then the report will contain a slice of matching structs, arrays or slices. See target struct field types 'struct', 'array' or 'slice' above.<br />**Note**: (1) allocator must be provided (not null), since report slice has to be allocated; (2) caller owns the report struct and must deallocate this report slice. |
-
-l
