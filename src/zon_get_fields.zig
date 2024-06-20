@@ -51,6 +51,8 @@ const ZonGetFieldsError = error
                              // but no allocator was provided (the optional allocator parameter is null).
     IncompatibleTargetField, // Target struct field (array / slice elements) and AST field value are of
                              // incompatible types.
+    BadReportType,           // Report struct field type doesn't match the target struct type.
+                             // This should never happen, and is a sign of an internal problem in this library.
 };
 
 // ---------------------------------------------------------
@@ -441,7 +443,7 @@ test "getFieldVal top level struct parsing error test"
     var ast = try std.zig.Ast.parse(std.testing.allocator, zon_txt, .zon);
     defer ast.deinit(std.testing.allocator);
 
-    std.debug.print("\nDisregard the (warn) message below, it's normal:\n", .{});
+    std.debug.print("\nDisregard the (warn) message below, it's expected and normal:\n", .{});
     try std.testing.expectError(error.PathElementNotStruct, getFieldVal([]const u8, ast, "struct_1.abc"));
 }
 
@@ -498,7 +500,7 @@ test "getFieldVal big test"
     var ast = try std.zig.Ast.parse(std.testing.allocator, zon_txt, .zon);
     defer ast.deinit(std.testing.allocator);
 
-    std.debug.print("\nDisregard the (warn) messages below, they're normal:\n", .{});
+    std.debug.print("\nDisregard the (warn) messages below, they're expected and normal:\n", .{});
 
     try std.testing.expectError(error.BadSeparatorPosition, getFieldVal([]const u8, ast, "struct_1..abc"));
     try std.testing.expectError(error.BadSeparatorPosition, getFieldVal([]const u8, ast, ".struct_1.abc"));
@@ -616,7 +618,7 @@ const ZonFieldResult = enum
     filled,           // Field / array / slice was filled
     overflow_filled,  // This element of array or slice was filled, and all others as well, but there
                       // were too many data elements in AST, and they were ignored
-    pub fn isGreaterThan(self: ZonFieldResult, other: ZonFieldResult) bool
+    fn isGreaterThan(self: ZonFieldResult, other: ZonFieldResult) bool
     {
         return switch (other)
         {
@@ -637,22 +639,21 @@ const ZonFieldResult = enum
 ///                  (or those slices have no counterparts in `ast` so they are ignored).
 pub fn zonToStruct(tgt_struct_ptr: anytype, ast: std.zig.Ast, allocr: ?std.mem.Allocator)
     !MakeReportStructType(if (@typeInfo(@TypeOf(tgt_struct_ptr)) != .Pointer or
-                           @typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.is_const or
-                           @typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.size != .One or
-                           @typeInfo(@typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.child) != .Struct)
-                           @compileError("fn zonToStruct: `tgt_struct_ptr` is " ++ @typeName(@TypeOf(tgt_struct_ptr)) ++
-                                         " , expected a single-item pointer to a mutable (non-const) struct")
-                       else
-                           @typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.child)
+                              @typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.is_const or
+                              @typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.size != .One or
+                              @typeInfo(@typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.child) != .Struct)
+                              @compileError("fn zonToStruct: `tgt_struct_ptr` is " ++ @typeName(@TypeOf(tgt_struct_ptr)) ++
+                                            " , expected a single-item pointer to a mutable (non-const) struct")
+                          else
+                              @typeInfo(@TypeOf(tgt_struct_ptr)).Pointer.child)
 {
     // Root field index -----------------------------------------------------v
     return try populateStruct(tgt_struct_ptr, ast, ast.nodes.items(.data)[0].lhs,
                               ZonFieldResult.filled, allocr, 0);
 }
 
-/// Create a return type for `fn zonToStruct`: an anonymous struct,
-/// where field names are the same as in the `tgt_type` struct, but field type is `bool`.
-/// Nested structs in `tgt_type` become nested structs in the returned type.
+/// Returns report struct (field) type that represents this target struct field type, `tgt_type`,
+/// which is a struct (including the target struct itselg). See `Report struct field types` in README.md
 fn MakeReportStructType(tgt_type: type) type
 {
     const tgt_type_info = @typeInfo(tgt_type);
@@ -684,6 +685,11 @@ fn MakeReportStructType(tgt_type: type) type
                         {
                             .Struct => MakeReportStructType(tgt_fld.type),
                             .Array => MakeReportArrayType(tgt_fld.type),
+                            .Pointer => |ptr_info|
+                                if (ptr_info.size == .Slice)
+                                    MakeReportSliceType(tgt_fld.type)
+                                else
+                                    ZonFieldResult,
                             else => ZonFieldResult,
                         },
                     .default_value = null,
@@ -697,6 +703,11 @@ fn MakeReportStructType(tgt_type: type) type
                                  {
                                      .Struct => MakeReportStructType(tgt_fld.type),
                                      .Array => MakeReportArrayType(tgt_fld.type),
+                                     .Pointer => |ptr_info|
+                                         if (ptr_info.size == .Slice)
+                                             MakeReportSliceType(tgt_fld.type)
+                                         else
+                                             ZonFieldResult,
                                      else => ZonFieldResult
                                  }),
                 };
@@ -718,6 +729,8 @@ fn MakeReportStructType(tgt_type: type) type
                  });
 }
 
+/// Returns report struct field type that represents this target struct field type, `tgt_type`,
+/// which is an array. See `Report struct field types` in README.md
 fn MakeReportArrayType(tgt_type: type) type
 {
     const tgt_type_info = @typeInfo(tgt_type);
@@ -733,6 +746,11 @@ fn MakeReportArrayType(tgt_type: type) type
                             {
                                 .Array => MakeReportArrayType(tgt_type_info.Array.child),
                                 .Struct => MakeReportStructType(tgt_type_info.Array.child),
+                                .Pointer => |ptr_info|
+                                    if (ptr_info.size == .Slice)
+                                        MakeReportSliceType(tgt_type_info.Array.child)
+                                    else
+                                        ZonFieldResult,
                                 else => ZonFieldResult,
                             },
                         .sentinel = null,
@@ -740,9 +758,55 @@ fn MakeReportArrayType(tgt_type: type) type
                  });
 }
 
+/// Returns report struct field type that represents this target struct field type, `tgt_type`,
+/// which is a slice. See `Report struct field types` in README.md
+fn MakeReportSliceType(tgt_type: type) type
+{
+    const tgt_type_info = @typeInfo(tgt_type);
+    if (tgt_type_info != .Pointer)
+        @compileError("fn MakeReportSliceType: `tgt_type` is " ++ @typeName(tgt_type) ++
+                      " , expected a slice");
+    if (tgt_type_info.Pointer.size != .Slice)
+        @compileError("fn MakeReportSliceType: `tgt_type` is a Pointer: " ++ @typeName(tgt_type) ++
+                      " , expected a slice");
+
+    // Only target slices of structs, arrays and slices are represented in the report struct
+    // with slices of ZonFieldResult.
+    // Slices of primitive types, such as integers, floats, etc., and even pointers that are not slices,
+    // are represented with a single ZonFieldResult field the report struct.
+    const ReportSliceChildType =
+        switch (@typeInfo(tgt_type_info.Pointer.child))
+        {
+            .Struct => MakeReportStructType(tgt_type_info.Pointer.child),
+            .Array => MakeReportArrayType(tgt_type_info.Pointer.child),
+            .Pointer => |ptr_info|
+                if (ptr_info.size == .Slice)
+                    MakeReportSliceType(tgt_type_info.Pointer.child)
+                else
+                    ZonFieldResult, // Slice elemetns are primitive pointers (not slices), though we actually don't support these target struct fields o_O
+            else => return ZonFieldResult // Slice elemetns are of a primitive type, so in the report we'll have a single ZonFieldResult
+        };
+
+    // We've got a 'fancier' slice in the target struct - its elements are either structs, arrays, or slices.
+    return @Type(.{
+                    .Pointer =
+                    .{
+                        .size = .Slice,
+                        .is_const = false,
+                        .is_volatile = false,
+                        .alignment = @alignOf(ReportSliceChildType), // TODO: SHOULDN'T IT BE SLICE ALIGNMENT, NOT SLICE ELEMENT ALIGNMENT? -- BUT HOW?
+                        .address_space = .generic, // ? pub const AddressSpace = enum(u5) { // CPU address spaces.  generic, gs, fs, ss, ...
+                        .child = ReportSliceChildType,
+                        .is_allowzero = false,
+                        .sentinel = null,
+                    }
+                });
+}
+
 /// Create and return an initialized instance of the report struct (of type T).
 /// Struct fields are initialized with ZonFieldResult.not_filled, including nested structs and arrays.
-/// `T` Struct type. This type is returned by MakeReportStructType function.
+/// `T` struct type. This is the type returned by MakeReportStructType function.
+/// `allocr` allocator is there to be passed to `makeReportSlice`.
 fn makeReportStruct(T: type) T
 {
     if (@typeInfo(T) != .Struct)
@@ -758,8 +822,14 @@ fn makeReportStruct(T: type) T
                 {
                     .Struct => @field(res, fld.name) = makeReportStruct(fld.type),
                     .Array  => @field(res, fld.name) = makeReportArray(fld.type),
+                    .Pointer => |ptr_info|
+                        if (ptr_info.size == .Slice)
+                        {   @field(res, fld.name) = makeReportSlice(fld.type);   }
+                        else
+                            @compileError("fn makeReportStruct: field `" ++ fld.name ++ "` is a Pointer, but not a slice: " ++
+                                          @typeName(fld.type) ++ " , expected ZonFieldResult, struct, array or slice"),
                     else => @compileError("fn makeReportStruct: field `" ++ fld.name ++ "` is " ++
-                                          @typeName(fld.type) ++ " , expected ZonFieldResult, struct or array")
+                                          @typeName(fld.type) ++ " , expected ZonFieldResult, struct, array or slice")
                 }
         };
     return res;
@@ -767,7 +837,8 @@ fn makeReportStruct(T: type) T
 
 /// Create and return an initialized instance of the report array (of type T).
 /// Array elements are initialized to to ZonFieldResult.not_filled, including nested structs and arrays.
-/// `T` Array type. This type is returned by MakeReportArrayType function.
+/// `T` array type. This is the type returned by MakeReportArrayType function.
+/// `allocr` allocator is there to be passed to `makeReportSlice`.
 fn makeReportArray(T: type) T
 {
     if (@typeInfo(T) != .Array)
@@ -779,17 +850,41 @@ fn makeReportArray(T: type) T
         for (&res) |*e| e.* = ZonFieldResult.not_filled;
         return res;
     }
-
+    // Array elements are NOT simple ZonFieldResult enums
     const arr_elt_type_info = @typeInfo(@typeInfo(T).Array.child);
     switch (arr_elt_type_info)
     {
         .Struct => { for (&res) |*e| e.* = makeReportStruct(@typeInfo(T).Array.child); },
         .Array  => { for (&res) |*e| e.* = makeReportArray(@typeInfo(T).Array.child); },
+        .Pointer => |ptr_info|
+            if (ptr_info.size == .Slice)
+            {   for (&res) |*e| e.* = makeReportSlice(@typeInfo(T).Array.child);   }
+            else
+                @compileError("fn makeReportArray: array elemets are `Pointer`s, but not slices" ++
+                              @typeName(@typeInfo(T).Array.child) ++
+                              " , expected ZonFieldResult, struct, array or slice"),
         else => @compileError("fn makeReportArray: array elemets are " ++
                               @typeName(@typeInfo(T).Array.child) ++
-                              " , expected ZonFieldResult, struct or array")
+                              " , expected ZonFieldResult, struct, array or slice")
     }
     return res;
+}
+
+/// Create and return an initialized instance of the report slice (of type T).
+/// Array elements are initialized to to ZonFieldResult.not_filled, including nested structs and arrays.
+/// `T` slice type. This is the type returned by MakeReportSliceType function.
+fn makeReportSlice(T: type) T
+{
+    if (T == ZonFieldResult)
+        return ZonFieldResult.not_filled;
+
+    const tgt_type_info = @typeInfo(T);
+    if (tgt_type_info != .Pointer)
+        @compileError("fn makeReportSlice: `T` is " ++ @typeName(T) ++ " , expected a ZonFieldResult or a slice");
+    if (tgt_type_info.Pointer.size != .Slice)
+        @compileError("fn makeReportSlice: `T` is a Pointer: " ++ @typeName(T) ++ " , expected a slice");
+
+    return &.{};
 }
 
 /// Populate target (sub)struct with values from `ast`, starting with `struct_ast_fld_idx`.
@@ -810,13 +905,13 @@ fn populateStruct(ptr_tgt: anytype,
                   allocr: ?std.mem.Allocator,
                   comptime recursion_depth: u32)
     !MakeReportStructType(if (@typeInfo(@TypeOf(ptr_tgt)) != .Pointer or
-                           @typeInfo(@TypeOf(ptr_tgt)).Pointer.is_const or
-                           @typeInfo(@TypeOf(ptr_tgt)).Pointer.size != .One or
-                           @typeInfo(@typeInfo(@TypeOf(ptr_tgt)).Pointer.child) != .Struct)
-                           @compileError("fn populateStruct: `ptr_tgt` is " ++ @typeName(@TypeOf(ptr_tgt)) ++
-                                         " , expected a single-item pointer to a mutable (non-const) struct")
-                       else
-                           @typeInfo(@TypeOf(ptr_tgt)).Pointer.child)
+                              @typeInfo(@TypeOf(ptr_tgt)).Pointer.is_const or
+                              @typeInfo(@TypeOf(ptr_tgt)).Pointer.size != .One or
+                              @typeInfo(@typeInfo(@TypeOf(ptr_tgt)).Pointer.child) != .Struct)
+                              @compileError("fn populateStruct: `ptr_tgt` is " ++ @typeName(@TypeOf(ptr_tgt)) ++
+                                            " , expected a single-item pointer to a mutable (non-const) struct")
+                          else
+                              @typeInfo(@TypeOf(ptr_tgt)).Pointer.child)
 {
     if (recursion_depth > zon_fld_path_len_limit) // Limit recursion depth, for the sake of sanity
     {
@@ -883,10 +978,19 @@ fn populateStruct(ptr_tgt: anytype,
                         {
                             if (ptr_info.size == .Slice) // Target struct field is a slice
                             {
+                                // `fn populateSlice()` returns its result via one of its arguments,
+                                // `ptr_report`. This is because depending on the type of target slice elements,
+                                // the result can be either a single ZonFieldResult enum (for primitive elements),
+                                // or a slice of nested structs, arrays, slices that contain ZonFieldResult enums
+                                // somewhere at the bottom.
+                                // To be able to return the result, `ptr_report` must be a pointer to the var of
+                                // the proper type.
+                                const PopSliceResultType = MakeReportSliceType(tgt_fld.type);
+                                var pop_slc_rslt = makeReportSlice(PopSliceResultType); // returns &.{} or ZonFieldResult.not_filled
                                 // Pass a pointer to this slice field to `populateSlice`.
-                                @field(report, tgt_fld.name) =
-                                    try populateSlice(&@field(ptr_tgt.*, tgt_fld.name), ast, ast_fld_idx,
-                                                      allocr, recursion_depth + 1);
+                                try populateSlice(&@field(ptr_tgt.*, tgt_fld.name), ast, ast_fld_idx,
+                                                  allocr, &pop_slc_rslt, recursion_depth + 1);
+                                @field(report, tgt_fld.name) = pop_slc_rslt;
                             }
                             else
                                 std.log.warn("Struct field '" ++ tgt_fld.name ++ "' of pointer type " ++
@@ -1028,8 +1132,19 @@ fn populateArray(ptr_tgt_arr: anytype,
             {
                 if (ptr_info.size == .Slice) // Target struct field is a slice
                 {
-                    report[i] = try populateSlice(&ptr_tgt_arr[i], ast, ast_arr_elt_fld_idx,
-                                                  allocr, recursion_depth + 1);
+                    // `fn populateSlice()` returns its result via one of its arguments,
+                    // `ptr_report`. This is because depending on the type of target slice elements,
+                    // the result can be either a single ZonFieldResult enum (for primitive elements),
+                    // or a slice of nested structs, arrays, slices that contain ZonFieldResult enums
+                    // somewhere at the bottom.
+                    // To be able to return the result, `ptr_report` must be a pointer to the var of
+                    // the proper type.
+                    const PopSliceResultType = MakeReportSliceType(arr_type_info.Array.child);
+                    var pop_slc_rslt = makeReportSlice(PopSliceResultType); // returns &.{} currently
+                    // Pass a pointer to this slice field to `populateSlice`.
+                    try populateSlice(&ptr_tgt_arr[i], ast, ast_arr_elt_fld_idx, allocr,
+                                      &pop_slc_rslt, recursion_depth + 1);
+                    report[i] = pop_slc_rslt;
                 }
                 else
                 {
@@ -1057,13 +1172,18 @@ fn populateArray(ptr_tgt_arr: anytype,
 /// `arr_ast_fld_idx` Index of the array node in `ast`.
 /// `allocr`          Optional allocator. Must be non-null unless `ptr_tgt_slc` is *[]const u8,
 ///                   otherwise an error is returned.
+/// `ptr_report`      A non-const single-item pointer to ZonFieldResult (for `ptr_tgt_slc` of primitive
+///                   elements, or to a slice (for `ptr_tgt_slc` of structs, arrays or slices).
+///                   In the latter case, memory for this report slice will be allocated using `allocr`.
+///                   The caller will own this memory and will have to appropriately deallocate it.
 /// `recursion_depth` Recursion level, on the first call should be 1. Incremented on subsequent calls
 ///                   to `populateSlice`, `populateArray`, `populateStruct`.
 fn populateSlice(ptr_tgt_slc: anytype,
                  ast: std.zig.Ast,
                  arr_ast_fld_idx: std.zig.Ast.Node.Index,
                  allocr: ?std.mem.Allocator,
-                 comptime recursion_depth: u32) !ZonFieldResult
+                 ptr_report: anytype,
+                 comptime recursion_depth: u32) !void
 {
     // Comptime check type of ptr_tgt_slc
     const ptr_tgt_slc_typ_inf = @typeInfo(@TypeOf(ptr_tgt_slc));
@@ -1073,6 +1193,31 @@ fn populateSlice(ptr_tgt_slc: anytype,
         @compileError("fn populateSlice: `ptr_tgt_slc` is " ++ @typeName(@TypeOf(ptr_tgt_slc)) ++
                       " , expected a single-item pointer to slice");
 
+    // Comptime check type of report
+    const report_typ_inf = @typeInfo(@TypeOf(ptr_report));
+    const tgt_slice_child_type = @typeInfo(ptr_tgt_slc_typ_inf.Pointer.child).Pointer.child;
+    const tgt_slc_chld_typ_inf = @typeInfo(tgt_slice_child_type);
+    if ((tgt_slc_chld_typ_inf == .Int or
+         tgt_slc_chld_typ_inf == .Float or
+         tgt_slc_chld_typ_inf == .Bool) and // Target slice elements are of a primitive type
+        (report_typ_inf != .Pointer or report_typ_inf.Pointer.size != .One or // Not a single-item pointer
+         report_typ_inf.Pointer.is_const or                                   // or a const pointer
+         report_typ_inf.Pointer.child != ZonFieldResult))                     // or not to ZonFieldResult
+        @compileError("fn populateSlice: `ptr_report` is " ++ @typeName(@TypeOf(ptr_report)) ++
+                      " , expected a non-const single-item pointer to ZonFieldResult, since target slice " ++
+                      "elements are of primitive type " ++ @typeName(tgt_slice_child_type));
+    //
+    if ((tgt_slc_chld_typ_inf == .Struct or
+         tgt_slc_chld_typ_inf == .Array or
+         tgt_slc_chld_typ_inf == .Pointer) and // Target slice elements are of a complex type
+        (report_typ_inf != .Pointer or report_typ_inf.Pointer.size != .One or // Not a single-item pointer
+         report_typ_inf.Pointer.is_const or                                   // or a const pointer
+         @typeInfo(report_typ_inf.Pointer.child) != .Pointer or               // or not..
+         @typeInfo(report_typ_inf.Pointer.child).Pointer.size != .Slice))     // ..to a slice
+        @compileError("fn populateSlice: `ptr_report` is " ++ @typeName(@TypeOf(ptr_report)) ++
+                      " , expected a non-const single-item pointer to slice, since target slice " ++
+                      "elements are of complex type " ++ @typeName(tgt_slice_child_type));
+
     if (recursion_depth > zon_fld_path_len_limit) // Limit recursion depth, for the sake of sanity
     {
         @compileLog("zon_fld_path_len_limit = ", zon_fld_path_len_limit);
@@ -1080,9 +1225,7 @@ fn populateSlice(ptr_tgt_slc: anytype,
         @compileError("fn populateSlice: recursion limit exceeded");
     }
 
-    const tgt_slice_child_type = @typeInfo(ptr_tgt_slc_typ_inf.Pointer.child).Pointer.child;
-
-    // Try parsing found AST field as array, and if it doesn't work, try treating it as a string
+    // Try parsing found AST field as array, and if that doesn't work, try treating it as a string
     var buf: [2]std.zig.Ast.Node.Index = undefined;
     const arr_init = ast.fullArrayInit(&buf, arr_ast_fld_idx) orelse // ?full.ArrayInit
     {
@@ -1096,6 +1239,9 @@ fn populateSlice(ptr_tgt_slc: anytype,
 
             if (tgt_slice_child_type == u8)
             {
+                if (report_typ_inf.Pointer.child != ZonFieldResult) // Target slice is contains primitive type elements (u8),
+                    return ZonGetFieldsError.BadReportType;         // should not have happened.
+
                 if (@typeInfo(ptr_tgt_slc_typ_inf.Pointer.child).Pointer.is_const)
                 {
                     // Set the slice `tgt` is a pointer to,
@@ -1103,14 +1249,16 @@ fn populateSlice(ptr_tgt_slc: anytype,
                     // Note that `ast.source` is [:0]const u8, meaning the target slice elements
                     // must be const u8
                     ptr_tgt_slc.* = strv;
-                    return ZonFieldResult.filled; // Done with this field
+                    ptr_report.* = ZonFieldResult.filled;
+                    return; // Done with this field
                 }
                 // Target slice elements are non-const u8, try using allocr (if any) to clone the value
                 // to a new buffer. Caller will own this buffer.
                 if (allocr) |alcr|
                 {
                     ptr_tgt_slc.* = try alcr.dupe(u8, strv);
-                    return ZonFieldResult.filled;
+                    ptr_report.* = ZonFieldResult.filled;
+                    return;
                 }
                 //
                 const ast_fld_name = ast.tokenSlice(ast.firstToken(arr_ast_fld_idx) - 2);
@@ -1119,7 +1267,7 @@ fn populateSlice(ptr_tgt_slc: anytype,
                              .{ ast_fld_name, strv });
                 return ZonGetFieldsError.NoAllocator;
             }
-
+            // Target slice elements are not u8's (and zon value is a string)
             const ast_fld_name = ast.tokenSlice(ast.firstToken(arr_ast_fld_idx) - 2);
             std.log.warn("Value of field '{s}' is a string = '{s}' " ++
                          "but target slice elements ({s}) are not u8 or const u8",
@@ -1135,73 +1283,81 @@ fn populateSlice(ptr_tgt_slc: anytype,
     };
     // We have parsed AST element `arr_ast_fld_idx` as array.
     // Now allocate a new buffer for array elements and assign it to `tgt`.
+    // Also, if target slice elements are not of a primitive type (integers, floats, etc.),
+    // then we must allocate yet another slice for the report struct and return it via `ptr_report`.
     if (allocr) |alcr|
     {
-        var report = ZonFieldResult.not_filled;
         var tgt_buf = try alcr.alloc(tgt_slice_child_type, arr_init.ast.elements.len);
-        for (arr_init.ast.elements, 0..) |ast_arr_elt_fld_idx, i|
+        switch (tgt_slc_chld_typ_inf)
         {
-            // Maybe have for loop nested in this comptime switch instead?
-            switch (@typeInfo(tgt_slice_child_type))
+            .Int =>
             {
-                .Int =>
-                {
+                for (arr_init.ast.elements, 0..) |ast_arr_elt_fld_idx, i|
                     tgt_buf[i] = try getValueInt(tgt_slice_child_type, ast, ast_arr_elt_fld_idx);
-                    report = ZonFieldResult.filled;
-                },
-                .Float =>
-                {
+                ptr_report.* = ZonFieldResult.filled;
+            },
+            .Float =>
+            {
+                for (arr_init.ast.elements, 0..) |ast_arr_elt_fld_idx, i|
                     tgt_buf[i] = try getValueFloat(tgt_slice_child_type, ast, ast_arr_elt_fld_idx);
-                    report = ZonFieldResult.filled;
-                },
-                .Bool =>
-                {
+                ptr_report.* = ZonFieldResult.filled;
+            },
+            .Bool =>
+            {
+                for (arr_init.ast.elements, 0..) |ast_arr_elt_fld_idx, i|
                     tgt_buf[i] = try getValueBool(ast, ast_arr_elt_fld_idx);
-                    report = ZonFieldResult.filled;
-                },
-                .Struct =>
+                ptr_report.* = ZonFieldResult.filled;
+            },
+            .Struct =>
+            {
+                ptr_report.* = try alcr.alloc(@typeInfo(report_typ_inf.Pointer.child).Pointer.child,
+                                              arr_init.ast.elements.len);
+                for (arr_init.ast.elements, 0..) |ast_arr_elt_fld_idx, i|
                 {
                     const struct_res = try populateStruct(&tgt_buf[i], ast, ast_arr_elt_fld_idx,
                                                           ZonFieldResult.filled, allocr, recursion_depth + 1);
-                    if (report != ZonFieldResult.overflow_filled)
-                    {
-                        inline for (@typeInfo(@TypeOf(struct_res)).Struct.fields) |fld|
-                        {
-                            if (@field(struct_res, fld.name).isGreaterThan(report)) // Level can only go up
-                                report = @field(struct_res, fld.name);
-                        }
-                    }
-                },
-                .Array =>
+                    (ptr_report.*)[i] = struct_res;
+                }
+            },
+            .Array =>
+            {
+                ptr_report.* = try alcr.alloc(@typeInfo(report_typ_inf.Pointer.child).Pointer.child,
+                                              arr_init.ast.elements.len);
+                for (arr_init.ast.elements, 0..) |ast_arr_elt_fld_idx, i|
                 {
                     const arr_res = try populateArray(&tgt_buf[i], ast, ast_arr_elt_fld_idx, allocr,
                                                       recursion_depth + 1);
-                    // Element 0 should have the highest report -------------------------------v
-                    if (arr_res.len > 0 and arr_res[0].isGreaterThan(report)) report = arr_res[0]; // Can only go up
-                },
-                .Pointer => |ptr_info|
+                    (ptr_report.*)[i] = arr_res;
+                }
+            },
+            .Pointer => |ptr_info|
+            {
+                // We don't support element types other than slices
+                if (ptr_info.size == .Slice) // Target slice element is also slice
                 {
-                    if (ptr_info.size == .Slice) // Target struct field is a slice
-                    {
-                        // Pass a pointer to this slice field to `populateSlice`.
-                        if (ptr_tgt_slc_typ_inf.Pointer.size == .Slice)
-                        {
-                            const slc_res = try populateSlice(&tgt_buf[i], ast, ast_arr_elt_fld_idx,
-                                                              allocr, recursion_depth + 1);
-                            if (slc_res.isGreaterThan(report)) report = slc_res; // Can only go up
-                        }
-                    }
-                    else
-                        @compileError("Slice elements of pointer type " ++
-                                      @typeName(@TypeOf(tgt_slice_child_type)) ++
-                                      " are not supported");
-                },
-                else => @compileError("Slices of " ++ @typeName(tgt_slice_child_type) ++
-                                      " are not supported")
-            }
+                    // Allocate memory for the report slice.
+                    // The caller (end user) will own this slice together with the rest of
+                    // the report and target structs.
+                    const ReptSliceEltType = MakeReportSliceType(report_typ_inf.Pointer.child);
+                    var report_for_slice = try alcr.alloc(ReptSliceEltType, arr_init.ast.elements.len);
+
+                    for (arr_init.ast.elements, 0..) |ast_arr_elt_fld_idx, i|
+                        // Pass a pointer to this slice field to `populateSlice`
+                        try populateSlice(&tgt_buf[i], ast, ast_arr_elt_fld_idx, allocr,
+                                          &report_for_slice[i], recursion_depth + 1);
+                    // ptr_report MUST be a pointer to a slice
+                    ptr_report.* = report_for_slice;
+                }
+                else
+                    @compileError("Slice elements of pointer type " ++
+                                  @typeName(@TypeOf(tgt_slice_child_type)) ++
+                                  " are not supported");
+            },
+            else => @compileError("Slices of " ++ @typeName(tgt_slice_child_type) ++
+                                  " are not supported")
         }
         ptr_tgt_slc.* = tgt_buf;
-        return report; // We're done
+        return; // We're done
     }
 
     const ast_fld_name = ast.tokenSlice(ast.firstToken(arr_ast_fld_idx) - 2);
@@ -1241,8 +1397,8 @@ fn getValueInt(comptime T: type, ast: std.zig.Ast, idx: std.zig.Ast.Node.Index) 
         else
             if (str_val.len > 3 and str_val.len <= 6 and
                 (str_val[1] == '\\' or str_val[1] == 0 or // Must check parseCharLiteral's input
-                ((str_val.len == 6 and str_val[1] & 0b11111000 == 0b11110000) or
-                 (str_val.len == 5 and str_val[1] & 0b11110000 == 0b11100000) or
+                ((str_val.len == 6 and str_val[1] & 0b11111000 == 0b11110000) or // to make sure
+                 (str_val.len == 5 and str_val[1] & 0b11110000 == 0b11100000) or // it doesn't crash
                  (str_val.len == 4 and str_val[1] & 0b11100000 == 0b11000000))))
             {
                 const parsed_char = std.zig.parseCharLiteral(str_val);
@@ -1356,7 +1512,8 @@ test "zonToStruct big test"
         \\            .d_i32 = -123456
         \\        }
         \\    },
-        \\    .slice_nested_2 = .{ .{ .c_u32 = 0, .d_i32 = 1 }, .{ .c_u32 = 2, .d_i32 = 3 } },
+        \\    .slice_of_structs = .{ .{ .c_u32 = 0, .d_i32 = 1 }, .{ .c_u32 = 2, .d_i32 = 3 } },
+        \\    .slice_of_arrays = .{ .{ 0, 1, 2, 3 }, .{ 0, 10, 20, 30 } },
         \\    .character_1 = 'A',
         \\    .character_escaped = '\'',
         \\    .character_newline = '\x0A', // aka '\n'
@@ -1417,7 +1574,7 @@ test "zonToStruct big test"
         boolean: bool = false,
         extra_field: u32 = 7777, // Is not going to be modified, no value in ZON
         arr_u16: [5]u16 = .{ 0, 0, 0, 0, 0 },
-        slice_u16: []u16 = &.{}, // Will be allocated using allocator
+        slice_u16: []u16 = &.{}, // Will be allocated using the provided allocator
         arr_bool: [4]bool = .{ false, false, false, false },
         arr_f32: [4]f32 = .{ 0.1, 0.2, 0.3, 0.4 },
         arr_i8: [4]i8 = .{ -1, -2, -3, -4 },
@@ -1426,7 +1583,8 @@ test "zonToStruct big test"
                                       .{ .x = 123, .y = 45.6, .z = 789, .s = &.{} } },
         arr_arr: [2][2]i8 = .{ .{ 0, 0 }, .{ 0, 0 } },
         nested_1: Nstd1 = .{},
-        slice_nested_2: []Nstd1.Nstd2 = &.{},
+        slice_of_structs: []Nstd1.Nstd2 = &.{}, // Will be allocated using the provided allocator, ditto report field
+        slice_of_arrays: [][4]u32 = &.{}, // Will be allocated using the provided allocator, ditto report field
         arr_str_filled: [5]u8 = [_]u8 { '!' } ** 5,
         arr_str_overflow: [2]u8 = [_]u8 { '!' } ** 2,
         arr_str_partial: [10]u8 = [_]u8 { '!' } ** 10,
@@ -1434,10 +1592,16 @@ test "zonToStruct big test"
 
     var tgt_struct = TargetStruct {};
     const res = try zonToStruct(&tgt_struct, ast, std.testing.allocator);
-    defer std.testing.allocator.free(tgt_struct.nested_1.s_slice_of_u8); // Must free `s_slice_of_u8`
-    defer std.testing.allocator.free(tgt_struct.slice_u16);              // Must free `slice_u16`
-    defer std.testing.allocator.free(tgt_struct.slice_nested_2);         // Must free `slice_nested_2`
-
+    defer std.testing.allocator.free(tgt_struct.nested_1.s_slice_of_u8); // Must free `tgt_struct.s_slice_of_u8`
+    defer std.testing.allocator.free(tgt_struct.slice_u16);              // Must free `tgt_struct.slice_u16`
+    defer std.testing.allocator.free(tgt_struct.slice_of_structs);       // Must free `tgt_struct.slice_of_structs`
+    defer std.testing.allocator.free(res.slice_of_structs);              // Must free `res.slice_of_structs`, because elements of `tgt_struct.slice_of_structs`
+                                                                         // are not of a primitive type (not integer, float, or booleans) and so
+                                                                         // `res.slice_of_structs` is a slice too.
+    defer std.testing.allocator.free(tgt_struct.slice_of_arrays);        // Must free `tgt_struct.slice_of_structs`
+    defer std.testing.allocator.free(res.slice_of_arrays);               // Must free `res.slice_of_arrays`, because elements of `tgt_struct.slice_of_arrays`
+                                                                         // are not of a primitive type (not integer, float, or booleans) and so
+                                                                         // `res.slice_of_arrays` is a slice too.
     try std.testing.expectEqual(res.hex_u8, ZonFieldResult.filled);
     try std.testing.expectEqual(tgt_struct.hex_u8, 0x11);
     try std.testing.expectEqual(res.str_u16, ZonFieldResult.filled);
@@ -1569,9 +1733,14 @@ test "zonToStruct big test"
     try std.testing.expectEqual(res.nested_1.nested_2.d_i32, ZonFieldResult.filled);
     try std.testing.expectEqual(tgt_struct.nested_1.nested_2.d_i32, -123456);
 
-    try std.testing.expectEqual(res.slice_nested_2, ZonFieldResult.filled);
-    val_u16 = 0; // Neither u32 nor i32, but thtat's OK
-    for (tgt_struct.slice_nested_2) |n2|
+    for (res.slice_of_structs) |res_elt|
+    {
+        try std.testing.expectEqual(res_elt.c_u32, ZonFieldResult.filled);
+        try std.testing.expectEqual(res_elt.d_i32, ZonFieldResult.filled);
+    }
+
+    val_u16 = 0; // Neither u32 nor i32, but that's OK
+    for (tgt_struct.slice_of_structs) |n2|
     {
         try std.testing.expectEqual(n2.c_u32, val_u16);
         val_u16 += 1;
@@ -1586,6 +1755,114 @@ test "zonToStruct big test"
     for (res.arr_str_partial) |r| try std.testing.expectEqual(r, ZonFieldResult.partially_filled);
     try std.testing.expectEqualStrings((&tgt_struct.arr_str_partial)[0..5], "Hello");
     for ((&tgt_struct.arr_str_partial)[5..]) |e| try std.testing.expectEqual(e, 0);
+}
+
+test "zonToStruct: Slice of structs"
+{
+    const zon_txt = ".{ .slc_of_structs = .{ .{ .a = 0, .b = 1, .arr = .{ 0.0, 0.0 } }, .{ .a = 2, .b = 3, .arr = .{ 1.0, 1.0 } }, .{ .a = 4, .b = 5 } } }";
+    var ast = try std.zig.Ast.parse(std.testing.allocator, zon_txt, .zon);
+    defer ast.deinit(std.testing.allocator);
+
+    const TargetStruct = struct
+    {
+        const StructWithArray = struct
+        {
+            a: u32 = 64,
+            b: i32 = -10,
+            arr: [2]f32 = [_]f32 { 0.0 } ** 2,
+        };
+
+        slc_of_structs: []StructWithArray = &.{}, // Will be allocated using the provided allocator, both here and in `report`
+    };
+    var tgt_struct = TargetStruct{};
+    const report = try zonToStruct(&tgt_struct, ast, std.testing.allocator); // MUST pass allocator, since we have slices
+    defer std.testing.allocator.free(tgt_struct.slc_of_structs); // Must free `tgt_struct.slc_of_structs`
+    defer std.testing.allocator.free(report.slc_of_structs); // Must free `report.slc_of_structs`, since elements of `tgt_struct.slc_of_structs` are not primitive
+
+    var i: i32 = 0;
+    for (tgt_struct.slc_of_structs, 0..) |s, j| // Check `tgt_struct.slc_of_structs` values
+    {
+        try std.testing.expectEqual(s.a, @as(u32, @intCast(i)));
+        i += 1;
+        try std.testing.expectEqual(s.b, i);
+        i += 1;
+        // There's no value for the `arr` field of struct 2 in `zon_txt`
+        if (j <= 1) for (s.arr) |e| try std.testing.expectEqual(e, @as(f32, @floatFromInt(j)) * 1.0);
+    }
+    for (report.slc_of_structs, 0..) |s, j| // Check the report
+    {
+        try std.testing.expectEqual(s.a, ZonFieldResult.filled);
+        try std.testing.expectEqual(s.b, ZonFieldResult.filled);
+        for (s.arr) |e| try std.testing.expectEqual(e, if (j <= 1) ZonFieldResult.filled else ZonFieldResult.not_filled);
+    }
+}
+
+test "zonToStruct: Slice of arrays"
+{
+    const zon_txt = ".{ .slc_of_arrays = .{ .{ 10, 9, 8, }, .{ 7, 6, 5, }, .{ 4, 3, 2, }, .{ 1, 0 }, } }";
+    var ast = try std.zig.Ast.parse(std.testing.allocator, zon_txt, .zon);
+    defer ast.deinit(std.testing.allocator);
+
+    const TargetStruct = struct
+    {
+        // Slice of 3-element u16 arrays
+        slc_of_arrays: [][3]u16 = &.{}, // Will be allocated using the provided allocator, both here and in `report`
+        slc_of_f32: []f32 = &.{}, // Will be allocated using the provided allocator, but only in the target struct
+    };
+    var tgt_struct = TargetStruct{};
+    const report = try zonToStruct(&tgt_struct, ast, std.testing.allocator); // MUST pass allocator, since we have slices
+    defer std.testing.allocator.free(tgt_struct.slc_of_arrays); // Must free `tgt_struct.slc_of_arrays`
+    defer std.testing.allocator.free(report.slc_of_arrays);     // Must free `report.slc_of_arrays`, since elements of `tgt_struct.slc_of_arrays` are not primitive
+    // `tgt_struct.slc_of_f32` is going to remain unallocated, but we know this only because the ZON
+    // text is hardcoded. Normally you have to deallocate all slices in the target struct, and
+    // their report counterparts if slice elements are not of elementary type (not integers, floats or booleans).
+    defer std.testing.allocator.free(tgt_struct.slc_of_f32); // Must free `tgt_struct.slc_of_f32`. `report.slc_of_f32` is a `ZonFieldResult` enum though.
+
+    var expected_val: i32 = 10;
+    check_values: for (tgt_struct.slc_of_arrays) |s| // Check `tgt_struct.slc_of_arrays` values
+    {
+        for (s) |e|
+        {
+            try std.testing.expectEqual(e, expected_val);
+            expected_val -= 1;
+            if (expected_val < 0) // The last element of the last array is not there in `zon_txt`,
+                break :check_values; // so we skip it. Normally you check your `report` to know that.
+        }
+    }
+    for (report.slc_of_arrays, 0..) |s, i| // Check the report
+    {
+        for (s, 0..) |e, j| // Elements of the last array are going to be `.partially_filled`, then `.not_filled`
+            try std.testing.expectEqual(e, if (i < 3) ZonFieldResult.filled else
+                                               if (j < 2) ZonFieldResult.partially_filled else
+                                                   ZonFieldResult.not_filled);
+    }
+    try std.testing.expectEqual(report.slc_of_f32, ZonFieldResult.not_filled);
+}
+
+test "zonToStruct: Slice of slices"
+{
+    const zon_txt = ".{ .slc_of_slices = .{ .{ 0, 0, 0, }, .{ 1, 1 }, .{ 2, }, .{ 3, 3 }, } }";
+    var ast = try std.zig.Ast.parse(std.testing.allocator, zon_txt, .zon);
+    defer ast.deinit(std.testing.allocator);
+
+    const TargetStruct = struct
+    {
+        slc_of_slices: [][]u16 = &.{}, // Will be allocated using the provided allocator, both here and in `report`
+    };
+    var tgt_struct = TargetStruct{};
+    const report = try zonToStruct(&tgt_struct, ast, std.testing.allocator); // MUST pass allocator, since we have slices
+    defer
+    {
+        for (tgt_struct.slc_of_slices) |s| std.testing.allocator.free(s); // Free slice elements of `tgt_struct.slc_of_slices` FIRST
+        std.testing.allocator.free(tgt_struct.slc_of_slices); // THEN free `tgt_struct.slc_of_slices` itself
+        std.testing.allocator.free(report.slc_of_slices); // Also free `report.slc_of_slices`. Since elements of `tgt_struct.slc_of_slices` are not primitive, it's also a slice.
+    }
+
+    for (tgt_struct.slc_of_slices, 0..) |sl, i| // Check `tgt_struct.slc_of_slices` values
+        for (sl) |e|
+            try std.testing.expectEqual(e, i);
+    for (report.slc_of_slices) |e| // Check the report
+        try std.testing.expectEqual(e, ZonFieldResult.filled);
 }
 
 test "zonToStruct: NoAllocator error test"

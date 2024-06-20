@@ -4,7 +4,7 @@ Several functions to facilitate the process of walking Abstract Syntax Trees (AS
 
 But first you have to call `std.zig.Ast.parse` to tokenize and parse your ZON, creating the AST.
 
-Tested with Zig **0.12.0** and **0.13.0-dev.211+6a65561e3**.
+Tested with Zig **0.12.0**, **0.12.1**, **0.13.0**, and **0.14.0-dev.91+a154d8da8**
 
 Probably won't work with Zig 0.11, but you're welcome to try it and report back, although I'm not too keen on backporting.
 
@@ -74,10 +74,13 @@ Say you've got this ZON file (`my.zon`):
     .unicode_char = '⚡',
     .primes = .{ 2, 3, 5, 7, 11 },
     .factorials = .{ 1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880, 3628800, 39916800 },
+    .slc_of_structs = .{ .{ .ham = 10, .eggs = 2 }, .{ .ham = 5 } },
+    .slc_of_arrays = .{ .{ 10, 20, 30 }, .{ 40, 50, }, },
+    .slc_of_slices = .{ .{ 1, 2, 3 }, .{ 4, 5 }, .{ 6 } }
 }
 ```
 Then you can either:
-1. Define a struct, pass a pointer to it together with AST built from `my.zon` to pub `fn zonToStruct`, get your struct filled, and get a report struct which mirrors the fields of your struct, indicating whether they were filled or not:
+1. Define a struct, pass a pointer to it together with AST built from `my.zon` to pub `fn zonToStruct`, get your struct filled, and get a report struct which mirrors the fields of your struct, indicating whether they were filled or not (see [this table](#Report-struct-field-types) for report struct field types):
 
 ```zig
 const std = @import("std");
@@ -106,10 +109,11 @@ pub fn main() !void
             port: u16 = 0,
             user: []u8 = &.{}, // Having a slice field requires passing a non-null allocator
                                // to zonToStruct, and freeing `user` when we're done
-            password: [20]u8 = [_]u8 {33} ** 20, // This version is filled with string/array elements up
+            password: [20]u8 = [_]u8 {33} ** 20, // This array is filled with string/array elements up
                                                  // to this field's capacity, or padded with 0 bytes,
-                                                 // if the string/array hasn't got enough elements
+                                                 // if ZON string/array hasn't got enough elements
         };
+        const MyStruct = struct { ham: u32 = 0, eggs: u32 = 0 };
         database: DatabaseSettings = .{},
         decimal_separator: u8 = 0,
         months_in_year: u8 = 0,
@@ -119,11 +123,24 @@ pub fn main() !void
         unicode_char: u21 = 0,
         primes: [10]u8 = [_]u8 { 0 } ** 10,
         factorials: [10]u32 = [_]u32 { 0 } ** 10,
+        slc_of_structs: []MyStruct = &.{},
+        slc_of_arrays: [][3]u32 = &.{},
+        slc_of_slices: [][]u32 = &.{},
     };
     var ms = MyStruct {};
     // We MUST provide `allocr` if there are slices in ms, otherwise a null is fine.
     const report = try zgf.zonToStruct(&ms, ast, allocr);
     defer allocr.free(ms.database.user); // Must free `user` since it's a slice of non-const u8's.
+    defer allocr.free(ms.slc_of_structs);
+    defer allocr.free(report.slc_of_structs); // Must also free the slice of structs in `report`
+    defer allocr.free(ms.slc_of_arrays);
+    defer allocr.free(report.slc_of_arrays);
+    defer
+    {
+        for (ms.slc_of_slices) |s| allocr.free(s); // Deallocate nested slices first
+        allocr.free(ms.slc_of_slices); // THEN deallocate the outer slice
+        allocr.free(report.slc_of_slices); // `report` contains a slice of `ZonFieldResult` enums
+    }
 
     std.debug.print("Field = database.host      value = {s}\n", .{ ms.database.host });
     std.debug.print("Field = database.port      value = {d}\n", .{ ms.database.port });
@@ -140,6 +157,25 @@ pub fn main() !void
     std.debug.print("]\n", .{});
     std.debug.print("Field = factorials         value = [ ", .{});
     for (ms.factorials) |f| std.debug.print("{}, ", .{ f });
+    std.debug.print("]\n", .{});
+    std.debug.print("Field = slc_of_structs     value = [ ", .{});
+    for (ms.slc_of_structs) |s| std.debug.print("{{ ham = {}, eggs = {} }}, ", .{ s.ham, s.eggs });
+    std.debug.print("]\n", .{});
+    std.debug.print("Field = slc_of_arrays      value = [ ", .{});
+    for (ms.slc_of_arrays) |a|
+    {
+        std.debug.print("[ ", .{});
+        for (a) |e| std.debug.print("{}, ", .{ e });
+        std.debug.print("], ", .{});
+    }
+    std.debug.print("]\n", .{});
+    std.debug.print("Field = slc_of_slices      value = [ ", .{});
+    for (ms.slc_of_slices) |s|
+    {
+        std.debug.print("[ ", .{});
+        for (s) |e| std.debug.print("{}, ", .{ e });
+        std.debug.print("], ", .{});
+    }
     std.debug.print("]\n\n", .{});
 
     // `report` describes the state of corresponding fields in `ms`
@@ -208,7 +244,7 @@ pub fn main() !void
     std.debug.print("Field = {s}       value = {u}\n", .{ fld_name, unicode_char_u21 });
 
     std.debug.print("Field = primes             value = [ ", .{});
-    var buf = [_]u8 { 0 } ** 14;
+    var buf = [_]u8 { 0 } ** 22;
     for (0..5) |i|
     {
         const buf_slice = try std.fmt.bufPrint(&buf, "primes[{d}]", .{i});
@@ -225,5 +261,65 @@ pub fn main() !void
         std.debug.print("{d}, ", .{ int_u32 });
     }
     std.debug.print("]\n", .{});
+
+    std.debug.print("Field = slc_of_structs     value = [ ", .{});
+    for (0..2) |i|
+    {
+        const ham_buf_slice = try std.fmt.bufPrint(&buf, "slc_of_structs[{d}].ham", .{i});
+        const ham_int_u32 = try zgf.getFieldVal(u32, ast, ham_buf_slice);
+        const eggs_buf_slice = try std.fmt.bufPrint(&buf, "slc_of_structs[{d}].eggs", .{i});
+        const eggs_int_u32 = zgf.getFieldVal(u32, ast, eggs_buf_slice) catch |err|
+        {   // We actually must check these things for all fields
+            std.debug.print("{{ ham = {d}, eggs = {} }}, ", .{ ham_int_u32, err });
+            continue;
+        };
+        std.debug.print("{{ ham = {d}, eggs = {d} }}, ", .{ ham_int_u32, eggs_int_u32 });
+    }
+    std.debug.print("]\n", .{});
+
+    std.debug.print("Field = slc_of_arrays      value = [ ", .{});
+    for (0..2) |i|
+    {
+        std.debug.print("[ ", .{});
+        for (0..(3 - i)) |j|
+        {
+            const buf_slice = try std.fmt.bufPrint(&buf, "slc_of_arrays[{d}].[{d}]", .{i, j});
+            const int_u32 = try zgf.getFieldVal(u32, ast, buf_slice);
+            std.debug.print("{d}, ", .{ int_u32 });
+        }
+        std.debug.print("], ", .{});
+    }
+    std.debug.print("]\n", .{});
+
+    std.debug.print("Field = slc_of_slices      value = [ ", .{});
+    for (0..3) |i|
+    {
+        std.debug.print("[ ", .{});
+        for (0..(3 - i)) |j|
+        {
+            const buf_slice = try std.fmt.bufPrint(&buf, "slc_of_slices[{d}].[{d}]", .{i, j});
+            const int_u32 = try zgf.getFieldVal(u32, ast, buf_slice);
+            std.debug.print("{d}, ", .{ int_u32 });
+        }
+        std.debug.print("], ", .{});
+    }
+    std.debug.print("]\n", .{});
 }
 ```
+
+
+
+##### Report struct field types
+
+| Target struct field                      | Report struct field                                          |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| Primitive types (integers, floats, etc.) | ZonFieldResult enum.                                         |
+| Array of elements of a primitive type    | Array of ZonFieldResult enum elements.                       |
+| Array of arrays, structs or slices       | Array of arrays, structs, slices, or ZonFieldResult enums (for target array of slices of primitive elements).<br />The type of report array element depends on the type of target array elements. |
+| Struct                                   | Struct. Field types depend on target struct field types.     |
+| Slice of elements of a primitive type    | ZonFieldResult enum.                                         |
+| Slice of arrays                          | Slice of arrays. Report array element type depends on the target array element type.<br />**Note**: (1) allocator must be provided (not null), since report slice has to be allocated; (2) caller owns the report struct and must deallocate this report slice. |
+| Slice of structs                         | Slice of structs. Report struct field types depend on the target struct field types.<br />**Note**: (1) allocator must be provided (not null), since report slice has to be allocated; (2) caller owns the report struct and must deallocate this report slice. |
+| Slice of slices                          | If target nested slices contain primitive type elements (integers, floats, etc.), then the report will contain a slice of ZonFieldResult enum elements.<br />If target nested slices contain structs, arrays or slices, then the report will contain a slice of matching structs, arrays or slices. See target struct field types 'struct', 'array' or 'slice' above.<br />**Note**: (1) allocator must be provided (not null), since report slice has to be allocated; (2) caller owns the report struct and must deallocate this report slice. |
+
+l

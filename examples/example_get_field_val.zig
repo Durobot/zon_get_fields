@@ -56,7 +56,7 @@ pub fn main() !void
     std.debug.print("Field = {s}       value = {u}\n", .{ fld_name, unicode_char_u21 });
 
     std.debug.print("Field = primes             value = [ ", .{});
-    var buf = [_]u8 { 0 } ** 14;
+    var buf = [_]u8 { 0 } ** 22;
     for (0..5) |i|
     {
         const buf_slice = try std.fmt.bufPrint(&buf, "primes[{d}]", .{i});
@@ -71,6 +71,49 @@ pub fn main() !void
         const buf_slice = try std.fmt.bufPrint(&buf, "factorials[{d}]", .{i});
         const int_u32 = try zgf.getFieldVal(u32, ast, buf_slice);
         std.debug.print("{d}, ", .{ int_u32 });
+    }
+    std.debug.print("]\n", .{});
+
+    std.debug.print("Field = slc_of_structs     value = [ ", .{});
+    for (0..2) |i|
+    {
+        const ham_buf_slice = try std.fmt.bufPrint(&buf, "slc_of_structs[{d}].ham", .{i});
+        const ham_int_u32 = try zgf.getFieldVal(u32, ast, ham_buf_slice);
+        const eggs_buf_slice = try std.fmt.bufPrint(&buf, "slc_of_structs[{d}].eggs", .{i});
+        const eggs_int_u32 = zgf.getFieldVal(u32, ast, eggs_buf_slice) catch |err|
+        {   // We actually must check these things for all fields
+            std.debug.print("{{ ham = {d}, eggs = {} }}, ", .{ ham_int_u32, err });
+            continue;
+        };
+        std.debug.print("{{ ham = {d}, eggs = {d} }}, ", .{ ham_int_u32, eggs_int_u32 });
+    }
+    std.debug.print("]\n", .{});
+
+    std.debug.print("Field = slc_of_arrays      value = [ ", .{});
+    for (0..2) |i|
+    {
+        std.debug.print("[ ", .{});
+        for (0..(3 - i)) |j|
+        {
+            const buf_slice = try std.fmt.bufPrint(&buf, "slc_of_arrays[{d}].[{d}]", .{i, j});
+            const int_u32 = try zgf.getFieldVal(u32, ast, buf_slice);
+            std.debug.print("{d}, ", .{ int_u32 });
+        }
+        std.debug.print("], ", .{});
+    }
+    std.debug.print("]\n", .{});
+
+    std.debug.print("Field = slc_of_slices      value = [ ", .{});
+    for (0..3) |i|
+    {
+        std.debug.print("[ ", .{});
+        for (0..(3 - i)) |j|
+        {
+            const buf_slice = try std.fmt.bufPrint(&buf, "slc_of_slices[{d}].[{d}]", .{i, j});
+            const int_u32 = try zgf.getFieldVal(u32, ast, buf_slice);
+            std.debug.print("{d}, ", .{ int_u32 });
+        }
+        std.debug.print("], ", .{});
     }
     std.debug.print("]\n", .{});
 }

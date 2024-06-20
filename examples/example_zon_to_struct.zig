@@ -24,10 +24,11 @@ pub fn main() !void
             port: u16 = 0,
             user: []u8 = &.{}, // Having a slice field requires passing a non-null allocator
                                // to zonToStruct, and freeing `user` when we're done
-            password: [20]u8 = [_]u8 {33} ** 20, // This version is filled with string/array elements up
+            password: [20]u8 = [_]u8 {33} ** 20, // This array is filled with string/array elements up
                                                  // to this field's capacity, or padded with 0 bytes,
-                                                 // if the string/array hasn't got enough elements
+                                                 // if ZON string/array hasn't got enough elements
         };
+        const MyStruct = struct { ham: u32 = 0, eggs: u32 = 0 };
         database: DatabaseSettings = .{},
         decimal_separator: u8 = 0,
         months_in_year: u8 = 0,
@@ -37,11 +38,24 @@ pub fn main() !void
         unicode_char: u21 = 0,
         primes: [10]u8 = [_]u8 { 0 } ** 10,
         factorials: [10]u32 = [_]u32 { 0 } ** 10,
+        slc_of_structs: []MyStruct = &.{},
+        slc_of_arrays: [][3]u32 = &.{},
+        slc_of_slices: [][]u32 = &.{},
     };
     var ms = MyStruct {};
     // We MUST provide `allocr` if there are slices in ms, otherwise a null is fine.
     const report = try zgf.zonToStruct(&ms, ast, allocr);
     defer allocr.free(ms.database.user); // Must free `user` since it's a slice of non-const u8's.
+    defer allocr.free(ms.slc_of_structs);
+    defer allocr.free(report.slc_of_structs); // Must also free the slice of structs in `report`
+    defer allocr.free(ms.slc_of_arrays);
+    defer allocr.free(report.slc_of_arrays);
+    defer
+    {
+        for (ms.slc_of_slices) |s| allocr.free(s); // Deallocate nested slices first
+        allocr.free(ms.slc_of_slices); // THEN deallocate the outer slice
+        allocr.free(report.slc_of_slices); // `report` contains a slice of `ZonFieldResult` enums
+    }
 
     std.debug.print("Field = database.host      value = {s}\n", .{ ms.database.host });
     std.debug.print("Field = database.port      value = {d}\n", .{ ms.database.port });
@@ -58,6 +72,25 @@ pub fn main() !void
     std.debug.print("]\n", .{});
     std.debug.print("Field = factorials         value = [ ", .{});
     for (ms.factorials) |f| std.debug.print("{}, ", .{ f });
+    std.debug.print("]\n", .{});
+    std.debug.print("Field = slc_of_structs     value = [ ", .{});
+    for (ms.slc_of_structs) |s| std.debug.print("{{ ham = {}, eggs = {} }}, ", .{ s.ham, s.eggs });
+    std.debug.print("]\n", .{});
+    std.debug.print("Field = slc_of_arrays      value = [ ", .{});
+    for (ms.slc_of_arrays) |a|
+    {
+        std.debug.print("[ ", .{});
+        for (a) |e| std.debug.print("{}, ", .{ e });
+        std.debug.print("], ", .{});
+    }
+    std.debug.print("]\n", .{});
+    std.debug.print("Field = slc_of_slices      value = [ ", .{});
+    for (ms.slc_of_slices) |s|
+    {
+        std.debug.print("[ ", .{});
+        for (s) |e| std.debug.print("{}, ", .{ e });
+        std.debug.print("], ", .{});
+    }
     std.debug.print("]\n\n", .{});
 
     // `report` describes the state of corresponding fields in `ms`
