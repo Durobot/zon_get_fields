@@ -174,11 +174,11 @@ fn getFieldValStr(ast: std.zig.Ast, fld_path: []const u8) ![]const u8
 }
 
 /// Meat and potatoes of the whole operation.
-/// Goes through `ast_fields`, looking for the field referenced by
-/// `path_itr.next()`. If `path_itr` contains no more elements after it,
-/// returns field value, if it does, calls itself recursively.
-/// In the end, returns the value of the field defined by `path_itr` as a
-/// slice of characters within `ast` (a string), or an error.
+/// Goes through the elements of `ast`, specified by `ast_fields`, looking for the field
+/// referenced by `path_itr.next()`. If `path_itr` contains no more elements after that,
+/// the function returns field value, if it does, calls itself recursively.
+/// In the end returns the value of the field defined by `path_itr` as a
+/// slice of characters within `ast.source` (a string), or an error.
 fn walkAst(ast: std.zig.Ast,
            ast_fields: []const std.zig.Ast.Node.Index,
            path_itr: *std.mem.SplitIterator(u8, .scalar),
@@ -212,7 +212,8 @@ fn walkAst(ast: std.zig.Ast,
     }
 
     // If this path element is an array element, we must figure out the index (arr_idx)
-    const arr_idx: ?std.zig.Ast.Node.Index = blk:
+    const arr_idx: ?std.zig.Ast.Node.Index =
+    blk:
     {
         if (path_element[path_element.len - 1] == ']')
         {
@@ -290,7 +291,7 @@ fn walkAst(ast: std.zig.Ast,
                 {
                     if (arr_idx_val < 0 or arr_idx_val > ast_fields.len - 1)
                     {
-                        std.log.warn("Array index out of bounds - anonymous arrys contains {d} elements, index is {d}",
+                        std.log.warn("Array index out of bounds - anonymous array contains {d} elements, index is {d}",
                                      .{ ast_fields.len, arr_idx_val });
                         return ZonGetFieldsError.BadArrIdxValue;
                     }
@@ -323,7 +324,7 @@ fn walkAst(ast: std.zig.Ast,
                 {
                     std.log.warn("Parsing of field '{s}' failed, or its element {} is not an array",
                                 .{ path_element, arr_idx_val });
-                    return error.PathElementNotArray;
+                    return ZonGetFieldsError.PathElementNotArray;
                 };
                 return walkAst(ast, arr_elt_arr_init.ast.elements, path_itr, recursion_depth + 1);
             }
@@ -334,7 +335,7 @@ fn walkAst(ast: std.zig.Ast,
                 {
                     std.log.warn("Parsing of element {} of array field '{s}' failed, or this element is not a struct",
                                 .{ arr_idx_val, path_element });
-                    return error.PathElementNotStruct;
+                    return ZonGetFieldsError.PathElementNotStruct;
                 };
                 return walkAst(ast, arr_elt_struct_init.ast.fields, path_itr, recursion_depth + 1);
             }
@@ -371,7 +372,7 @@ fn walkAst(ast: std.zig.Ast,
             {
                 if (arr_idx_val < 0 or arr_idx_val > ast_fields.len - 1)
                 {
-                    std.log.warn("Array index out of bounds - anonymous arrys contains {d} elements, index is {d}",
+                    std.log.warn("Array index out of bounds - anonymous array contains {d} elements, index is {d}",
                                  .{ ast_fields.len, arr_idx_val });
                     return ZonGetFieldsError.BadArrIdxValue;
                 }
