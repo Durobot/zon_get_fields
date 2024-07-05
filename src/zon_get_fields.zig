@@ -29,9 +29,9 @@ const std = @import("std");
 /// call `walkAst`, which is a recursive function,
 /// and `zon_fld_path_len_limit` is the recursion
 /// depth limit.
-const zon_fld_path_len_limit = 20;
+pub const zon_fld_path_len_limit = 20;
 
-const ZonGetFieldsError = error
+pub const ZonGetFieldsError = error
 {
     // errors common for `fn getFieldVal` and `fn zonToStruct`:
     PathElementNotStruct,    // One of the path elements (other than the last one) is not a sub-struct in ZON (AST).
@@ -612,7 +612,7 @@ test "getFieldVal big test"
 // ---------------------------------------------------------
 
 /// Was the field / array element / slice element filled or not
-const ZonFieldResult = enum
+pub const ZonFieldResult = enum
 {
     not_filled,       // Field / array element / slice element was not filled
     partially_filled, // This element of array or slice was filled, but not all elements were filled
