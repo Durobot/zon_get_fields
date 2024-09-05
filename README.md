@@ -4,9 +4,11 @@ Several functions to facilitate the process of walking Abstract Syntax Trees (AS
 
 But first you have to call `std.zig.Ast.parse` to tokenize and parse your ZON, creating the AST.
 
-Tested with Zig **0.12.0**, **0.12.1**, **0.13.0**, and **0.14.0-dev.91+a154d8da8**
+Tested with Zig **0.14.0-dev.1421+f87dd43c1**.
 
-Probably won't work with Zig 0.11, but you're welcome to try it and report back, although I'm not too keen on backporting.
+Support for older versions, like Zig **0.12.0**, **0.12.1**, **0.13.0**, and **0.14.0-dev.91+a154d8da8** was dropped because of [this breaking change in the standard library](https://github.com/ziglang/zig/commit/0fe3fd01ddc2cd49c6a2b939577d16b9d2c65ea9).
+
+If you need a version of zon_get_fields that works with older Zig versions, [get this release](https://github.com/Durobot/zon_get_fields/releases/tag/v0.1-beta). It still probably won't work with Zig 0.11, but you're welcome to try it and report back, although I'm not too keen on backporting.
 
 **zon_get_fields** is licensed under the [the MIT License](https://en.wikipedia.org/w/index.php?title=MIT_License&useskin=vector). You are more than welcome to drop `zon_get_fields.zig` into your project (don't forget to `const zgf = @import("zon_get_fields.zig");`), or you can use the Zig package manager:
 
