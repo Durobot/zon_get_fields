@@ -1,5 +1,5 @@
 const std = @import("std");
-const zgf = @import("zon_get_fields.zig");
+const zgf = @import("zon_get_fields");
 
 pub fn main() !void
 {
@@ -8,7 +8,7 @@ pub fn main() !void
     const allocr = gpa.allocator();
 
     // `Ast.parse` requires a sentinel (0) terminated slice, so we pass 0 as the sentinel value (last arg)
-    const zon_txt = try std.fs.cwd().readFileAllocOptions(allocr, "my.zon", std.math.maxInt(usize),
+    const zon_txt = try std.fs.cwd().readFileAllocOptions(allocr, "examples/my.zon", std.math.maxInt(usize),
                                                           null, @alignOf(u8), 0);
     defer allocr.free(zon_txt);
 

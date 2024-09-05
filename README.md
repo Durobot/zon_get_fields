@@ -52,10 +52,10 @@ Things I don't really like:
 
 For examples of how to use them, turn to the test sections in `zon_parse.zig`:
 
-1. Find `zonToStruct Tests` [comment](https://github.com/Durobot/zon_get_fields/blob/fcf26e7fa125fce56e411a293b285f746417bd15/src/zon_get_fields.zig#L1489) for `pub fn zonToStruct` approach - filling your struct all at once;
-2. Find `getFieldVal Tests` [comment](https://github.com/Durobot/zon_get_fields/blob/fcf26e7fa125fce56e411a293b285f746417bd15/src/zon_get_fields.zig#L427) for `pub fn getFieldVal`approach - fetching field values one by one, as you provide string paths to each field.
+1. Find `zonToStruct Tests` [comment](https://github.com/Durobot/zon_get_fields/blob/cd1524a1e30b1375524a48b491d845f27a3b4594/src/zon_get_fields.zig#L1490) for `pub fn zonToStruct` approach - filling your struct all at once;
+2. Find `getFieldVal Tests` [comment](https://github.com/Durobot/zon_get_fields/blob/cd1524a1e30b1375524a48b491d845f27a3b4594/src/zon_get_fields.zig#L428) for `pub fn getFieldVal`approach - fetching field values one by one, as you provide string paths to each field.
 
-Or check out the short examples below.
+Or check out the short examples below (you can compile and run them with `zig build example_zon_to_struct` and `zig build example_get_field_val` commands).
 
 Say you've got this ZON file (`my.zon`):
 
