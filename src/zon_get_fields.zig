@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2023, 2024 Alexei Kireev
+// Copyright (c) 2023-2025 Alexei Kireev
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -145,7 +145,7 @@ pub fn getFieldVal(comptime T: type, ast: std.zig.Ast, fld_path: []const u8) !T
         },
         .pointer => |ptr_info|
         {
-            if (ptr_info.size == .Slice and ptr_info.child == u8 and ptr_info.is_const) { return str_val; }
+            if (ptr_info.size == .slice and ptr_info.child == u8 and ptr_info.is_const) { return str_val; }
             else @compileError("fn getFieldVal: type '" ++ @typeName(T) ++ "' not supported");
         },
         else => @compileError("fn getFieldVal: type '" ++ @typeName(T) ++ "' not supported")
@@ -641,7 +641,7 @@ pub const ZonFieldResult = enum
 pub fn zonToStruct(tgt_struct_ptr: anytype, ast: std.zig.Ast, allocr: ?std.mem.Allocator)
     !MakeReportStructType(if (@typeInfo(@TypeOf(tgt_struct_ptr)) != .pointer or
                               @typeInfo(@TypeOf(tgt_struct_ptr)).pointer.is_const or
-                              @typeInfo(@TypeOf(tgt_struct_ptr)).pointer.size != .One or
+                              @typeInfo(@TypeOf(tgt_struct_ptr)).pointer.size != .one or
                               @typeInfo(@typeInfo(@TypeOf(tgt_struct_ptr)).pointer.child) != .@"struct")
                               @compileError("fn zonToStruct: `tgt_struct_ptr` is " ++ @typeName(@TypeOf(tgt_struct_ptr)) ++
                                             " , expected a single-item pointer to a mutable (non-const) struct")
@@ -687,14 +687,14 @@ fn MakeReportStructType(tgt_type: type) type
                             .@"struct" => MakeReportStructType(tgt_fld.type),
                             .array => MakeReportArrayType(tgt_fld.type),
                             .pointer => |ptr_info|
-                                if (ptr_info.size == .Slice)
+                                if (ptr_info.size == .slice)
                                     MakeReportSliceType(tgt_fld.type)
                                 else
                                     ZonFieldResult,
                             else => ZonFieldResult,
                         },
-                    .default_value = null,
-//                     .default_value = if (@typeInfo(tgt_fld.type) != .@"struct" and @typeInfo(tgt_fld.type) != .array)
+                    .default_value_ptr = null,
+//                     .default_value_ptr = if (@typeInfo(tgt_fld.type) != .@"struct" and @typeInfo(tgt_fld.type) != .array)
 //                                          &unfilled //@as(?*ZonFieldResult, &unfilled)
 //                                      else
 //                                          null,
@@ -705,7 +705,7 @@ fn MakeReportStructType(tgt_type: type) type
                                      .@"struct" => MakeReportStructType(tgt_fld.type),
                                      .array => MakeReportArrayType(tgt_fld.type),
                                      .pointer => |ptr_info|
-                                         if (ptr_info.size == .Slice)
+                                         if (ptr_info.size == .slice)
                                              MakeReportSliceType(tgt_fld.type)
                                          else
                                              ZonFieldResult,
@@ -748,13 +748,13 @@ fn MakeReportArrayType(tgt_type: type) type
                                 .array => MakeReportArrayType(tgt_type_info.array.child),
                                 .@"struct" => MakeReportStructType(tgt_type_info.array.child),
                                 .pointer => |ptr_info|
-                                    if (ptr_info.size == .Slice)
+                                    if (ptr_info.size == .slice)
                                         MakeReportSliceType(tgt_type_info.array.child)
                                     else
                                         ZonFieldResult,
                                 else => ZonFieldResult,
                             },
-                        .sentinel = null,
+                        .sentinel_ptr = null,
                     }
                  });
 }
@@ -767,7 +767,7 @@ fn MakeReportSliceType(tgt_type: type) type
     if (tgt_type_info != .pointer)
         @compileError("fn MakeReportSliceType: `tgt_type` is " ++ @typeName(tgt_type) ++
                       " , expected a slice");
-    if (tgt_type_info.pointer.size != .Slice)
+    if (tgt_type_info.pointer.size != .slice)
         @compileError("fn MakeReportSliceType: `tgt_type` is a Pointer: " ++ @typeName(tgt_type) ++
                       " , expected a slice");
 
@@ -781,7 +781,7 @@ fn MakeReportSliceType(tgt_type: type) type
             .@"struct" => MakeReportStructType(tgt_type_info.pointer.child),
             .array => MakeReportArrayType(tgt_type_info.pointer.child),
             .pointer => |ptr_info|
-                if (ptr_info.size == .Slice)
+                if (ptr_info.size == .slice)
                     MakeReportSliceType(tgt_type_info.pointer.child)
                 else
                     ZonFieldResult, // Slice elemetns are primitive pointers (not slices), though we actually don't support these target struct fields o_O
@@ -792,14 +792,14 @@ fn MakeReportSliceType(tgt_type: type) type
     return @Type(.{
                     .pointer =
                     .{
-                        .size = .Slice,
+                        .size = .slice,
                         .is_const = false,
                         .is_volatile = false,
                         .alignment = @alignOf(ReportSliceChildType), // TODO: SHOULDN'T IT BE SLICE ALIGNMENT, NOT SLICE ELEMENT ALIGNMENT? -- BUT HOW?
                         .address_space = .generic, // ? pub const AddressSpace = enum(u5) { // CPU address spaces.  generic, gs, fs, ss, ...
                         .child = ReportSliceChildType,
                         .is_allowzero = false,
-                        .sentinel = null,
+                        .sentinel_ptr = null,
                     }
                 });
 }
@@ -824,7 +824,7 @@ fn makeReportStruct(T: type) T
                     .@"struct" => @field(res, fld.name) = makeReportStruct(fld.type),
                     .array  => @field(res, fld.name) = makeReportArray(fld.type),
                     .pointer => |ptr_info|
-                        if (ptr_info.size == .Slice)
+                        if (ptr_info.size == .slice)
                         {   @field(res, fld.name) = makeReportSlice(fld.type);   }
                         else
                             @compileError("fn makeReportStruct: field `" ++ fld.name ++ "` is a Pointer, but not a slice: " ++
@@ -858,7 +858,7 @@ fn makeReportArray(T: type) T
         .@"struct" => { for (&res) |*e| e.* = makeReportStruct(@typeInfo(T).array.child); },
         .array  => { for (&res) |*e| e.* = makeReportArray(@typeInfo(T).array.child); },
         .pointer => |ptr_info|
-            if (ptr_info.size == .Slice)
+            if (ptr_info.size == .slice)
             {   for (&res) |*e| e.* = makeReportSlice(@typeInfo(T).array.child);   }
             else
                 @compileError("fn makeReportArray: array elemets are `Pointer`s, but not slices" ++
@@ -882,7 +882,7 @@ fn makeReportSlice(T: type) T
     const tgt_type_info = @typeInfo(T);
     if (tgt_type_info != .pointer)
         @compileError("fn makeReportSlice: `T` is " ++ @typeName(T) ++ " , expected a ZonFieldResult or a slice");
-    if (tgt_type_info.pointer.size != .Slice)
+    if (tgt_type_info.pointer.size != .slice)
         @compileError("fn makeReportSlice: `T` is a Pointer: " ++ @typeName(T) ++ " , expected a slice");
 
     return &.{};
@@ -907,7 +907,7 @@ fn populateStruct(ptr_tgt: anytype,
                   comptime recursion_depth: u32)
     !MakeReportStructType(if (@typeInfo(@TypeOf(ptr_tgt)) != .pointer or
                               @typeInfo(@TypeOf(ptr_tgt)).pointer.is_const or
-                              @typeInfo(@TypeOf(ptr_tgt)).pointer.size != .One or
+                              @typeInfo(@TypeOf(ptr_tgt)).pointer.size != .one or
                               @typeInfo(@typeInfo(@TypeOf(ptr_tgt)).pointer.child) != .@"struct")
                               @compileError("fn populateStruct: `ptr_tgt` is " ++ @typeName(@TypeOf(ptr_tgt)) ++
                                             " , expected a single-item pointer to a mutable (non-const) struct")
@@ -977,7 +977,7 @@ fn populateStruct(ptr_tgt: anytype,
                                                   allocr, recursion_depth + 1),
                         .pointer => |ptr_info|
                         {
-                            if (ptr_info.size == .Slice) // Target struct field is a slice
+                            if (ptr_info.size == .slice) // Target struct field is a slice
                             {
                                 // `fn populateSlice()` returns its result via one of its arguments,
                                 // `ptr_report`. This is because depending on the type of target slice elements,
@@ -1027,7 +1027,7 @@ fn populateArray(ptr_tgt_arr: anytype,
                  comptime recursion_depth: u32)
     !MakeReportArrayType(if (@typeInfo(@TypeOf(ptr_tgt_arr)) != .pointer or
                              @typeInfo(@TypeOf(ptr_tgt_arr)).pointer.is_const or
-                             @typeInfo(@TypeOf(ptr_tgt_arr)).pointer.size != .One or
+                             @typeInfo(@TypeOf(ptr_tgt_arr)).pointer.size != .one or
                              @typeInfo(@typeInfo(@TypeOf(ptr_tgt_arr)).pointer.child) != .array)
                              @compileError("fn populateArray: `ptr_tgt_arr` is " ++ @typeName(@TypeOf(ptr_tgt_arr)) ++
                                            " , expected a single-item pointer to a non-const (mutable) array")
@@ -1131,7 +1131,7 @@ fn populateArray(ptr_tgt_arr: anytype,
                                                     allocr, recursion_depth + 1),
             .pointer => |ptr_info|
             {
-                if (ptr_info.size == .Slice) // Target struct field is a slice
+                if (ptr_info.size == .slice) // Target struct field is a slice
                 {
                     // `fn populateSlice()` returns its result via one of its arguments,
                     // `ptr_report`. This is because depending on the type of target slice elements,
@@ -1188,9 +1188,9 @@ fn populateSlice(ptr_tgt_slc: anytype,
 {
     // Comptime check type of ptr_tgt_slc
     const ptr_tgt_slc_typ_inf = @typeInfo(@TypeOf(ptr_tgt_slc));
-    if (ptr_tgt_slc_typ_inf != .pointer or ptr_tgt_slc_typ_inf.pointer.size != .One or // Not a single-item pointer
+    if (ptr_tgt_slc_typ_inf != .pointer or ptr_tgt_slc_typ_inf.pointer.size != .one or // Not a single-item pointer
         @typeInfo(ptr_tgt_slc_typ_inf.pointer.child) != .pointer or                    // to
-        @typeInfo(ptr_tgt_slc_typ_inf.pointer.child).pointer.size != .Slice)           // slice
+        @typeInfo(ptr_tgt_slc_typ_inf.pointer.child).pointer.size != .slice)           // slice
         @compileError("fn populateSlice: `ptr_tgt_slc` is " ++ @typeName(@TypeOf(ptr_tgt_slc)) ++
                       " , expected a single-item pointer to slice");
 
@@ -1201,7 +1201,7 @@ fn populateSlice(ptr_tgt_slc: anytype,
     if ((tgt_slc_chld_typ_inf == .int or
          tgt_slc_chld_typ_inf == .float or
          tgt_slc_chld_typ_inf == .bool) and // Target slice elements are of a primitive type
-        (report_typ_inf != .pointer or report_typ_inf.pointer.size != .One or // Not a single-item pointer
+        (report_typ_inf != .pointer or report_typ_inf.pointer.size != .one or // Not a single-item pointer
          report_typ_inf.pointer.is_const or                                   // or a const pointer
          report_typ_inf.pointer.child != ZonFieldResult))                     // or not to ZonFieldResult
         @compileError("fn populateSlice: `ptr_report` is " ++ @typeName(@TypeOf(ptr_report)) ++
@@ -1211,10 +1211,10 @@ fn populateSlice(ptr_tgt_slc: anytype,
     if ((tgt_slc_chld_typ_inf == .@"struct" or
          tgt_slc_chld_typ_inf == .array or
          tgt_slc_chld_typ_inf == .pointer) and // Target slice elements are of a complex type
-        (report_typ_inf != .pointer or report_typ_inf.pointer.size != .One or // Not a single-item pointer
+        (report_typ_inf != .pointer or report_typ_inf.pointer.size != .one or // Not a single-item pointer
          report_typ_inf.pointer.is_const or                                   // or a const pointer
          @typeInfo(report_typ_inf.pointer.child) != .pointer or               // or not..
-         @typeInfo(report_typ_inf.pointer.child).pointer.size != .Slice))     // ..to a slice
+         @typeInfo(report_typ_inf.pointer.child).pointer.size != .slice))     // ..to a slice
         @compileError("fn populateSlice: `ptr_report` is " ++ @typeName(@TypeOf(ptr_report)) ++
                       " , expected a non-const single-item pointer to slice, since target slice " ++
                       "elements are of complex type " ++ @typeName(tgt_slice_child_type));
@@ -1334,7 +1334,7 @@ fn populateSlice(ptr_tgt_slc: anytype,
             .pointer => |ptr_info|
             {
                 // We don't support element types other than slices
-                if (ptr_info.size == .Slice) // Target slice element is also slice
+                if (ptr_info.size == .slice) // Target slice element is also slice
                 {
                     // Allocate memory for the report slice.
                     // The caller (end user) will own this slice together with the rest of

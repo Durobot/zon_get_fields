@@ -4,7 +4,9 @@ Several functions to facilitate the process of walking Abstract Syntax Trees (AS
 
 But first you have to call `std.zig.Ast.parse` to tokenize and parse your ZON, creating the AST.
 
-Tested with Zig **0.14.0-dev.1421+f87dd43c1**.
+Updated to work with and tested with Zig **0.14.0-dev.3046+08d661fcf**.
+
+The latest commit is not going to work with earlier versions of Zig 0.14.0-dev, because of the breaking changes in lib/std/builtin.zig (change of names of struct fields, like `Array.sentinel` to `sentinel_ptr` or `StructField.default_value` to `default_value_ptr`).
 
 Support for older versions, like Zig **0.12.0**, **0.12.1**, **0.13.0**, and **0.14.0-dev.91+a154d8da8** was dropped because of [this breaking change in the standard library](https://github.com/ziglang/zig/commit/0fe3fd01ddc2cd49c6a2b939577d16b9d2c65ea9).
 
